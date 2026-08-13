@@ -3,7 +3,6 @@ package membership
 import (
 	"encoding/json"
 	"log/slog"
-	"sync"
 	"time"
 
 	"github.com/hashicorp/memberlist"
@@ -31,7 +30,6 @@ type Member struct {
 type Cluster struct {
 	mlist	*memberlist.Memberlist
 	events	chan Event
-	mu	sync.RWMutex
 }
 
 func NewCluster(nodeID string, bindPort int, syncAddr string, seeds []string) (*Cluster, error) {

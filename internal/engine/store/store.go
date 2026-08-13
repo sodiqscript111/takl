@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 
 	_ "modernc.org/sqlite"
 
@@ -223,11 +224,16 @@ func (s *Store) get(kind Kind, key string) (Row, bool, error) {
 	return r, true, nil
 }
 
+var safeKey = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
+
 func (s *Store) List(kind Kind, limit, offset int, filters map[string]any, fn func(Row) bool) error {
 	query := `SELECT kind, key, owner, hlc_ts, hlc_seq, tombstone, payload FROM rows WHERE kind = ? AND tombstone = 0`
 	args := []any{kind}
 
 	for k, v := range filters {
+		if !safeKey.MatchString(k) {
+			return fmt.Errorf("invalid filter key: %q", k)
+		}
 		query += fmt.Sprintf(" AND json_extract(payload, '$.%s') = ?", k)
 		args = append(args, v)
 	}

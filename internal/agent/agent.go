@@ -57,6 +57,9 @@ func (a *Agent) owner() string {
 }
 
 func (a *Agent) Start() error {
+	if err := a.hydrateSeen(); err != nil {
+		return err
+	}
 	hlc := a.clock.Tick()
 	runner := a.backend.Snapshot()
 	runner.Status = model.RunnerActive
@@ -64,6 +67,25 @@ func (a *Agent) Start() error {
 		return err
 	}
 	return a.emit(model.EventRunnerJoined, nil, hlc)
+}
+
+func (a *Agent) hydrateSeen() error {
+	for _, kind := range []store.Kind{store.KindBuild, store.KindContainer, store.KindMount, store.KindImage} {
+		keys := make(map[string]bool)
+		err := a.store.List(kind, -1, 0, nil, func(r store.Row) bool {
+			if r.Owner == a.owner() {
+				keys[r.Key] = true
+			}
+			return true
+		})
+		if err != nil {
+			return err
+		}
+		if len(keys) > 0 {
+			a.seen[kind] = keys
+		}
+	}
+	return nil
 }
 
 func (a *Agent) Step() error {
@@ -116,7 +138,7 @@ func (a *Agent) Step() error {
 		return err
 	}
 	for _, e := range events {
-		if err := a.emit(e.Type, e.Payload, hlc); err != nil {
+		if err := a.emit(e.Type, e.Payload, a.clock.Tick()); err != nil {
 			return err
 		}
 	}

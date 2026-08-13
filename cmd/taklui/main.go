@@ -8,8 +8,16 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"runtime"
 	"sync"
 )
+
+func binaryName() string {
+	if runtime.GOOS == "windows" {
+		return "takld.exe"
+	}
+	return "takld"
+}
 
 type Node struct {
 	ID		string	`json:"id"`
@@ -32,7 +40,8 @@ var (
 )
 
 func main() {
-	if err := exec.Command("go", "build", "-o", "takld.exe", "./cmd/takld").Run(); err != nil {
+	bin := binaryName()
+	if err := exec.Command("go", "build", "-o", bin, "./cmd/takld").Run(); err != nil {
 		slog.Error("failed to build takld", "err", err)
 		os.Exit(1)
 	}
@@ -89,7 +98,7 @@ func handleStartNode(w http.ResponseWriter, r *http.Request) {
 		"-db", fmt.Sprintf("%s.db", node.ID),
 	}
 
-	cmd := exec.Command("./takld.exe", args...)
+	cmd := exec.Command("./"+binaryName(), args...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Start(); err != nil {

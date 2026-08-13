@@ -122,7 +122,20 @@ func main() {
 				stop()
 			}
 		}()
-		defer gs.Stop()
+		defer func() {
+			stopped := make(chan struct{})
+			go func() {
+				gs.GracefulStop()
+				close(stopped)
+			}()
+			t := time.NewTimer(5 * time.Second)
+			defer t.Stop()
+			select {
+			case <-stopped:
+			case <-t.C:
+				gs.Stop()
+			}
+		}()
 	}
 
 	if *peers != "" || cluster != nil {

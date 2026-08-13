@@ -143,6 +143,7 @@ func (e *Engine) RoundOnce(ctx context.Context, peer string) error {
 
 	if len(resp.Events) > 0 {
 		var incoming []model.Event
+		var maxEvHLC model.HLC
 		for _, ev := range resp.Events {
 			var pl map[string]any
 			if ev.Payload != "" {
@@ -159,6 +160,9 @@ func (e *Engine) RoundOnce(ctx context.Context, peer string) error {
 			if h.After(evWm) {
 				evWm = h
 			}
+			if h.After(maxEvHLC) {
+				maxEvHLC = h
+			}
 		}
 		if err := e.st.ApplyEvents(incoming); err != nil {
 			return err
@@ -166,6 +170,7 @@ func (e *Engine) RoundOnce(ctx context.Context, peer string) error {
 		if err := e.st.SetWatermark(peer, store.KindEvent, evWm); err != nil {
 			return err
 		}
+		e.clock.Update(maxEvHLC)
 	}
 	return nil
 }

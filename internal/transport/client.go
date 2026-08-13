@@ -6,7 +6,9 @@ import (
 	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/keepalive"
 
 	"takl/internal/model"
 	"takl/internal/transport/pb"
@@ -29,9 +31,21 @@ func (c *Client) conn(addr string) (*grpc.ClientConn, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if cc, ok := c.conns[addr]; ok {
-		return cc, nil
+		state := cc.GetState()
+		if state != connectivity.Shutdown && state != connectivity.TransientFailure {
+			return cc, nil
+		}
+		// Stale connection — close and reconnect.
+		_ = cc.Close()
+		delete(c.conns, addr)
 	}
-	cc, err := grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	cc, err := grpc.NewClient(addr,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithKeepaliveParams(keepalive.ClientParameters{
+			Time:    30 * time.Second,
+			Timeout: 10 * time.Second,
+		}),
+	)
 	if err != nil {
 		return nil, err
 	}

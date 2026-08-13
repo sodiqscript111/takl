@@ -1,0 +1,47 @@
+syntax = "proto3";
+
+package takl.v1;
+
+option go_package = "takl/internal/transport/pb;pb";
+
+message HLC {
+  int64 ts = 1;
+  int64 seq = 2;
+}
+
+message Row {
+  string kind = 1;
+  string key = 2;
+  string owner = 3;
+  HLC hlc = 4;
+  bool tombstone = 5;
+  bytes payload = 6;
+}
+
+message PullRequest {
+  string node_id = 1;
+  map<string, HLC> watermarks = 2;
+  map<string, uint64> checksums = 3;
+  HLC event_watermark = 4;
+  uint64 event_checksum = 5;
+}
+
+message Event {
+  string runner_id = 1;
+  int64 seq = 2;
+  string type = 3;
+  string payload = 4;
+  HLC hlc = 5;
+}
+
+message PullResponse {
+  string node_id = 1;
+  repeated Row rows = 2;
+  map<string, uint64> checksums = 3;
+  repeated Event events = 4;
+  uint64 event_checksum = 5;
+}
+
+service SyncService {
+  rpc Pull(PullRequest) returns (PullResponse);
+}

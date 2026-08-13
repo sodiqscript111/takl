@@ -1,0 +1,12 @@
+/bin/
+/coverage.out
+*.cover
+*.test
+*.log
+*.db
+*.db-wal
+*.db-shm
+*.exe
+bin/
+.DS_Store
+.desloppify/

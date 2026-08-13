@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Takl Chaos Dashboard</title>
+    <link rel="stylesheet" href="index.css">
+</head>
+<body>
+    <header>
+        <div class="header-content">
+            <h1>Takl Chaos Controller</h1>
+            <p>Distributed runtime metadata cluster monitoring</p>
+        </div>
+        <button id="start-all" class="btn primary">Boot Cluster</button>
+        <button id="run-chaos" class="btn" style="background: #a855f7; color: white;">Run Chaos Sim</button>
+        <button id="kill-all" class="btn danger">Kill All</button>
+    </header>
+
+    <main>
+        <div id="nodes-grid" class="grid">
+        </div>
+    </main>
+    <script src="script.js"></script>
+</body>
+</html>

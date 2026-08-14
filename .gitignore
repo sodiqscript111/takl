@@ -10,3 +10,5 @@
 bin/
 .DS_Store
 .desloppify/
+.idea/
+.vscode/

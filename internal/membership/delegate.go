@@ -29,7 +29,7 @@ func (d *delegate) trySend(e Event) {
 	select {
 	case d.events <- e:
 	default:
-		// Drop event to prevent deadlocking memberlist's gossip goroutines.
+
 	}
 }
 

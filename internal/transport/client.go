@@ -35,7 +35,7 @@ func (c *Client) conn(addr string) (*grpc.ClientConn, error) {
 		if state != connectivity.Shutdown && state != connectivity.TransientFailure {
 			return cc, nil
 		}
-		// Stale connection — close and reconnect.
+
 		_ = cc.Close()
 		delete(c.conns, addr)
 	}

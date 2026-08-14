@@ -17,6 +17,7 @@ import (
 
 	"takl/internal/agent"
 	"takl/internal/api"
+	"takl/internal/backend/docker"
 	"takl/internal/backend/stub"
 	"takl/internal/engine/store"
 	"takl/internal/engine/sync"
@@ -43,6 +44,7 @@ func main() {
 		region		= flag.String("region", "us-east-1", "region label")
 		tick		= flag.Duration("tick", time.Second, "agent sampling interval")
 		syncInterval	= flag.Duration("sync-interval", 2*time.Second, "sync round interval")
+		backendType	= flag.String("backend", "docker", "backend type (stub or docker)")
 	)
 	flag.Parse()
 
@@ -57,14 +59,31 @@ func main() {
 
 	clock := model.NewClock(nil)
 
-	var backend agent.Backend = stub.New(stub.Config{
-		NodeID:		*nodeID,
-		Hostname:	hostname,
-		IP:		"127.0.0.1",
-		Region:		*region,
-		Version:	version.Version,
-		Capacity:	*capacity,
-	})
+	var backend agent.Backend
+	if *backendType == "docker" {
+		var err error
+		backend, err = docker.New(docker.Config{
+			NodeID:   *nodeID,
+			Hostname: hostname,
+			IP:       "127.0.0.1",
+			Region:   *region,
+			Version:  version.Version,
+			Capacity: *capacity,
+		})
+		if err != nil {
+			slog.Error("failed to init docker backend", "err", err)
+			os.Exit(1)
+		}
+	} else {
+		backend = stub.New(stub.Config{
+			NodeID:   *nodeID,
+			Hostname: hostname,
+			IP:       "127.0.0.1",
+			Region:   *region,
+			Version:  version.Version,
+			Capacity: *capacity,
+		})
+	}
 
 	var cluster *membership.Cluster
 	if *bindPort > 0 {

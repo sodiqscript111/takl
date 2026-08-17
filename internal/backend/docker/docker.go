@@ -3,11 +3,15 @@ package docker
 import (
 	"context"
 	"log/slog"
+	"os"
 	"time"
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/volume"
 	"github.com/docker/docker/client"
+	"github.com/shirou/gopsutil/v3/cpu"
+	"github.com/shirou/gopsutil/v3/disk"
+	"github.com/shirou/gopsutil/v3/mem"
 
 	"takl/internal/model"
 )
@@ -38,6 +42,26 @@ func New(cfg Config) (*Backend, error) {
 }
 
 func (b *Backend) Snapshot() model.Runner {
+	memUtil := 0.0
+	if v, err := mem.VirtualMemory(); err == nil {
+		memUtil = v.UsedPercent / 100.0
+	}
+
+	cpuUtil := 0.0
+	if c, err := cpu.Percent(0, false); err == nil && len(c) > 0 {
+		cpuUtil = c[0] / 100.0
+	}
+
+	freeDiskMB := int64(0)
+	// Fallback to current directory if root fails, safe across OS
+	path := "/"
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		path = "."
+	}
+	if d, err := disk.Usage(path); err == nil {
+		freeDiskMB = int64(d.Free / 1024 / 1024)
+	}
+
 	return model.Runner{
 		RunnerID:         b.config.NodeID,
 		Hostname:         b.config.Hostname,
@@ -46,9 +70,9 @@ func (b *Backend) Snapshot() model.Runner {
 		Version:          b.config.Version,
 		Status:           model.RunnerActive,
 		LastHeartbeat:    time.Now().Unix(),
-		CPUUtil:          0.05,
-		MemUtil:          0.10,
-		FreeDiskMB:       50000,
+		CPUUtil:          cpuUtil,
+		MemUtil:          memUtil,
+		FreeDiskMB:       freeDiskMB,
 		BuildCacheMB:     0,
 		WorkerCapacity:   b.config.Capacity,
 		AvailableWorkers: b.config.Capacity,

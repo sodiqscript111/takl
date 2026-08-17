@@ -6,8 +6,8 @@ import (
 )
 
 type HLC struct {
-	TS	int64
-	Seq	int64
+	TS  int64
+	Seq int64
 }
 
 func (h HLC) Compare(o HLC) int {
@@ -31,10 +31,10 @@ func (h HLC) After(o HLC) bool {
 }
 
 type Clock struct {
-	mu	sync.Mutex
-	ts	int64
-	seq	int64
-	now	func() int64
+	mu  sync.Mutex
+	ts  int64
+	seq int64
+	now func() int64
 }
 
 func NewClock(now func() int64) *Clock {

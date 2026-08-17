@@ -111,9 +111,9 @@ func (b *Backend) Mounts() []model.Mount {
 	var res []model.Mount
 	for _, v := range vols.Volumes {
 		res = append(res, model.Mount{
-			RunnerID: b.config.NodeID,
-			ProjectID: "none",
-			MountPath:   v.Mountpoint,
+			RunnerID:     b.config.NodeID,
+			ProjectID:    "none",
+			MountPath:    v.Mountpoint,
 			LastAccessed: time.Now().Unix(),
 		})
 	}
@@ -140,13 +140,13 @@ func (b *Backend) Images() []model.Image {
 			name = img.ID
 		}
 		res = append(res, model.Image{
-			ImageID:  img.ID,
-			Digest:   "",
+			ImageID:    img.ID,
+			Digest:     "",
 			Repository: name,
-			Tag:      "",
-			SizeBytes:   img.Size,
-			RunnerID: b.config.NodeID,
-			LastSeen: time.Now().Unix(),
+			Tag:        "",
+			SizeBytes:  img.Size,
+			RunnerID:   b.config.NodeID,
+			LastSeen:   time.Now().Unix(),
 		})
 	}
 	return res

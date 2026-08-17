@@ -13,8 +13,8 @@ import (
 
 type Server struct {
 	pb.UnimplementedSyncServiceServer
-	nodeID	string
-	store	*store.Store
+	nodeID string
+	store  *store.Store
 }
 
 func NewServer(nodeID string, st *store.Store) *Server {
@@ -27,8 +27,8 @@ func (s *Server) RegisterWith(gs *grpc.Server) {
 
 func (s *Server) Pull(_ context.Context, req *pb.PullRequest) (*pb.PullResponse, error) {
 	resp := &pb.PullResponse{
-		NodeId:		s.nodeID,
-		Checksums:	make(map[string]uint64),
+		NodeId:    s.nodeID,
+		Checksums: make(map[string]uint64),
 	}
 	for _, kind := range store.Kinds {
 		wm := model.HLC{}
@@ -61,12 +61,12 @@ func (s *Server) Pull(_ context.Context, req *pb.PullRequest) (*pb.PullResponse,
 
 		for _, r := range rows {
 			resp.Rows = append(resp.Rows, &pb.Row{
-				Kind:		string(r.Kind),
-				Key:		r.Key,
-				Owner:		r.Owner,
-				Hlc:		&pb.HLC{Ts: r.HLC.TS, Seq: r.HLC.Seq},
-				Tombstone:	r.Tombstone,
-				Payload:	r.Payload,
+				Kind:      string(r.Kind),
+				Key:       r.Key,
+				Owner:     r.Owner,
+				Hlc:       &pb.HLC{Ts: r.HLC.TS, Seq: r.HLC.Seq},
+				Tombstone: r.Tombstone,
+				Payload:   r.Payload,
 			})
 		}
 	}
@@ -95,11 +95,11 @@ func (s *Server) Pull(_ context.Context, req *pb.PullRequest) (*pb.PullResponse,
 	for _, e := range evs {
 		pl, _ := json.Marshal(e.Payload)
 		resp.Events = append(resp.Events, &pb.Event{
-			RunnerId:	e.RunnerID,
-			Seq:		e.Seq,
-			Type:		string(e.Type),
-			Payload:	string(pl),
-			Hlc:		&pb.HLC{Ts: e.HLC.TS, Seq: e.HLC.Seq},
+			RunnerId: e.RunnerID,
+			Seq:      e.Seq,
+			Type:     string(e.Type),
+			Payload:  string(pl),
+			Hlc:      &pb.HLC{Ts: e.HLC.TS, Seq: e.HLC.Seq},
 		})
 	}
 

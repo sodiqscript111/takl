@@ -45,8 +45,8 @@ type UnimplementedSyncServiceServer struct{}
 func (UnimplementedSyncServiceServer) Pull(context.Context, *PullRequest) (*PullResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Pull not implemented")
 }
-func (UnimplementedSyncServiceServer) mustEmbedUnimplementedSyncServiceServer()	{}
-func (UnimplementedSyncServiceServer) testEmbeddedByValue()			{}
+func (UnimplementedSyncServiceServer) mustEmbedUnimplementedSyncServiceServer() {}
+func (UnimplementedSyncServiceServer) testEmbeddedByValue()                     {}
 
 type UnsafeSyncServiceServer interface {
 	mustEmbedUnimplementedSyncServiceServer()
@@ -69,8 +69,8 @@ func _SyncService_Pull_Handler(srv interface{}, ctx context.Context, dec func(in
 		return srv.(SyncServiceServer).Pull(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
-		Server:		srv,
-		FullMethod:	SyncService_Pull_FullMethodName,
+		Server:     srv,
+		FullMethod: SyncService_Pull_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(SyncServiceServer).Pull(ctx, req.(*PullRequest))
@@ -79,14 +79,14 @@ func _SyncService_Pull_Handler(srv interface{}, ctx context.Context, dec func(in
 }
 
 var SyncService_ServiceDesc = grpc.ServiceDesc{
-	ServiceName:	"takl.v1.SyncService",
-	HandlerType:	(*SyncServiceServer)(nil),
+	ServiceName: "takl.v1.SyncService",
+	HandlerType: (*SyncServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
-			MethodName:	"Pull",
-			Handler:	_SyncService_Pull_Handler,
+			MethodName: "Pull",
+			Handler:    _SyncService_Pull_Handler,
 		},
 	},
-	Streams:	[]grpc.StreamDesc{},
-	Metadata:	"v1/sync.proto",
+	Streams:  []grpc.StreamDesc{},
+	Metadata: "v1/sync.proto",
 }

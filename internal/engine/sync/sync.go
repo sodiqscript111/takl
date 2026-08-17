@@ -12,12 +12,12 @@ import (
 )
 
 type Engine struct {
-	nodeID		string
-	st		*store.Store
-	clock		*model.Clock
-	client		*transport.Client
-	peerProvider	func() []string
-	interval	time.Duration
+	nodeID       string
+	st           *store.Store
+	clock        *model.Clock
+	client       *transport.Client
+	peerProvider func() []string
+	interval     time.Duration
 }
 
 func New(nodeID string, st *store.Store, clock *model.Clock, client *transport.Client, peerProvider func() []string, interval time.Duration) *Engine {
@@ -123,12 +123,12 @@ func (e *Engine) RoundOnce(ctx context.Context, peer string) error {
 		var maxHLC model.HLC
 		for _, r := range resp.Rows {
 			row := store.Row{
-				Kind:		store.Kind(r.Kind),
-				Key:		r.Key,
-				Owner:		r.Owner,
-				HLC:		model.HLC{TS: r.Hlc.GetTs(), Seq: r.Hlc.GetSeq()},
-				Tombstone:	r.Tombstone,
-				Payload:	r.Payload,
+				Kind:      store.Kind(r.Kind),
+				Key:       r.Key,
+				Owner:     r.Owner,
+				HLC:       model.HLC{TS: r.Hlc.GetTs(), Seq: r.Hlc.GetSeq()},
+				Tombstone: r.Tombstone,
+				Payload:   r.Payload,
 			}
 			rows = append(rows, row)
 			if row.HLC.After(maxHLC) {
@@ -151,11 +151,11 @@ func (e *Engine) RoundOnce(ctx context.Context, peer string) error {
 			}
 			h := model.HLC{TS: ev.Hlc.Ts, Seq: ev.Hlc.Seq}
 			incoming = append(incoming, model.Event{
-				RunnerID:	ev.RunnerId,
-				Seq:		ev.Seq,
-				Type:		model.EventType(ev.Type),
-				Payload:	pl,
-				HLC:		h,
+				RunnerID: ev.RunnerId,
+				Seq:      ev.Seq,
+				Type:     model.EventType(ev.Type),
+				Payload:  pl,
+				HLC:      h,
 			})
 			if h.After(evWm) {
 				evWm = h

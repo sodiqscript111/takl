@@ -15,9 +15,9 @@ import (
 )
 
 type Client struct {
-	mu	sync.Mutex
-	conns	map[string]*grpc.ClientConn
-	timeout	time.Duration
+	mu      sync.Mutex
+	conns   map[string]*grpc.ClientConn
+	timeout time.Duration
 }
 
 func NewClient(timeout time.Duration) *Client {
@@ -59,10 +59,10 @@ func (c *Client) Pull(ctx context.Context, addr string, watermarks map[string]mo
 		return nil, err
 	}
 	req := &pb.PullRequest{
-		Watermarks:	make(map[string]*pb.HLC, len(watermarks)),
-		Checksums:	checksums,
-		EventWatermark:	&pb.HLC{Ts: eventWm.TS, Seq: eventWm.Seq},
-		EventChecksum:	eventChk,
+		Watermarks:     make(map[string]*pb.HLC, len(watermarks)),
+		Checksums:      checksums,
+		EventWatermark: &pb.HLC{Ts: eventWm.TS, Seq: eventWm.Seq},
+		EventChecksum:  eventChk,
 	}
 	for kind, h := range watermarks {
 		req.Watermarks[kind] = &pb.HLC{Ts: h.TS, Seq: h.Seq}

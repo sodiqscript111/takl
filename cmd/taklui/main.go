@@ -20,22 +20,22 @@ func binaryName() string {
 }
 
 type Node struct {
-	ID		string	`json:"id"`
-	HTTPPort	int	`json:"http_port"`
-	SyncPort	int	`json:"sync_port"`
-	GossipPort	int	`json:"gossip_port"`
-	Seed		int	`json:"seed"`
-	Running		bool	`json:"running"`
-	cmd		*exec.Cmd
+	ID         string `json:"id"`
+	HTTPPort   int    `json:"http_port"`
+	SyncPort   int    `json:"sync_port"`
+	GossipPort int    `json:"gossip_port"`
+	Seed       int    `json:"seed"`
+	Running    bool   `json:"running"`
+	cmd        *exec.Cmd
 }
 
 var (
-	mu	sync.Mutex
-	nodes	= map[string]*Node{
-		"node-a":	{ID: "node-a", HTTPPort: 8091, SyncPort: 8101, GossipPort: 7941, Seed: 1},
-		"node-b":	{ID: "node-b", HTTPPort: 8092, SyncPort: 8102, GossipPort: 7942, Seed: 2},
-		"node-c":	{ID: "node-c", HTTPPort: 8093, SyncPort: 8103, GossipPort: 7943, Seed: 3},
-		"node-d":	{ID: "node-d", HTTPPort: 8094, SyncPort: 8104, GossipPort: 7944, Seed: 4},
+	mu    sync.Mutex
+	nodes = map[string]*Node{
+		"node-a": {ID: "node-a", HTTPPort: 8091, SyncPort: 8101, GossipPort: 7941, Seed: 1},
+		"node-b": {ID: "node-b", HTTPPort: 8092, SyncPort: 8102, GossipPort: 7942, Seed: 2},
+		"node-c": {ID: "node-c", HTTPPort: 8093, SyncPort: 8103, GossipPort: 7943, Seed: 3},
+		"node-d": {ID: "node-d", HTTPPort: 8094, SyncPort: 8104, GossipPort: 7944, Seed: 4},
 	}
 )
 

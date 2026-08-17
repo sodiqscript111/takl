@@ -168,10 +168,10 @@ func TestEvents(t *testing.T) {
 	st := openTest(t)
 	for i := 0; i < 3; i++ {
 		if err := st.AppendEvent(model.Event{
-			Type:		model.EventBuildStarted,
-			RunnerID:	"r1",
-			Payload:	map[string]any{"i": i},
-			HLC:		model.HLC{TS: int64(i + 1)},
+			Type:     model.EventBuildStarted,
+			RunnerID: "r1",
+			Payload:  map[string]any{"i": i},
+			HLC:      model.HLC{TS: int64(i + 1)},
 		}); err != nil {
 			t.Fatal(err)
 		}

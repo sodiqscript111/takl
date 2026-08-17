@@ -27,11 +27,11 @@ func putRunner(t *testing.T, st *store.Store, r model.Runner) {
 		t.Fatal(err)
 	}
 	if err := st.Put(store.Row{
-		Kind:		store.KindRunner,
-		Key:		r.RunnerID,
-		Owner:		"test-node",
-		HLC:		model.HLC{TS: 1, Seq: 0},
-		Payload:	payload,
+		Kind:    store.KindRunner,
+		Key:     r.RunnerID,
+		Owner:   "test-node",
+		HLC:     model.HLC{TS: 1, Seq: 0},
+		Payload: payload,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -44,11 +44,11 @@ func putBuild(t *testing.T, st *store.Store, b model.Build) {
 		t.Fatal(err)
 	}
 	if err := st.Put(store.Row{
-		Kind:		store.KindBuild,
-		Key:		b.BuildID,
-		Owner:		"test-node",
-		HLC:		model.HLC{TS: 1, Seq: 0},
-		Payload:	payload,
+		Kind:    store.KindBuild,
+		Key:     b.BuildID,
+		Owner:   "test-node",
+		HLC:     model.HLC{TS: 1, Seq: 0},
+		Payload: payload,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -58,33 +58,33 @@ func TestBestRunnerRanking(t *testing.T) {
 	st := openTestStore(t)
 
 	putRunner(t, st, model.Runner{
-		RunnerID:		"runner-a",
-		Status:			model.RunnerActive,
-		CPUUtil:		0.9,
-		MemUtil:		0.9,
-		FreeDiskMB:		1000,
-		WorkerCapacity:		4,
-		AvailableWorkers:	0,
+		RunnerID:         "runner-a",
+		Status:           model.RunnerActive,
+		CPUUtil:          0.9,
+		MemUtil:          0.9,
+		FreeDiskMB:       1000,
+		WorkerCapacity:   4,
+		AvailableWorkers: 0,
 	})
 
 	putRunner(t, st, model.Runner{
-		RunnerID:		"runner-b",
-		Status:			model.RunnerActive,
-		CPUUtil:		0.1,
-		MemUtil:		0.2,
-		FreeDiskMB:		5000,
-		WorkerCapacity:		8,
-		AvailableWorkers:	4,
+		RunnerID:         "runner-b",
+		Status:           model.RunnerActive,
+		CPUUtil:          0.1,
+		MemUtil:          0.2,
+		FreeDiskMB:       5000,
+		WorkerCapacity:   8,
+		AvailableWorkers: 4,
 	})
 
 	putRunner(t, st, model.Runner{
-		RunnerID:		"runner-c",
-		Status:			model.RunnerActive,
-		CPUUtil:		0.5,
-		MemUtil:		0.5,
-		FreeDiskMB:		3000,
-		WorkerCapacity:		4,
-		AvailableWorkers:	2,
+		RunnerID:         "runner-c",
+		Status:           model.RunnerActive,
+		CPUUtil:          0.5,
+		MemUtil:          0.5,
+		FreeDiskMB:       3000,
+		WorkerCapacity:   4,
+		AvailableWorkers: 2,
 	})
 
 	srv := New(st, "test-node")
@@ -121,32 +121,32 @@ func TestCacheAwareLookup(t *testing.T) {
 	st := openTestStore(t)
 
 	putRunner(t, st, model.Runner{
-		RunnerID:		"runner-a",
-		Status:			model.RunnerActive,
-		CPUUtil:		0.3,
-		MemUtil:		0.3,
-		FreeDiskMB:		2000,
-		WorkerCapacity:		4,
-		AvailableWorkers:	2,
+		RunnerID:         "runner-a",
+		Status:           model.RunnerActive,
+		CPUUtil:          0.3,
+		MemUtil:          0.3,
+		FreeDiskMB:       2000,
+		WorkerCapacity:   4,
+		AvailableWorkers: 2,
 	})
 
 	putRunner(t, st, model.Runner{
-		RunnerID:		"runner-b",
-		Status:			model.RunnerActive,
-		CPUUtil:		0.2,
-		MemUtil:		0.2,
-		FreeDiskMB:		3000,
-		WorkerCapacity:		8,
-		AvailableWorkers:	4,
+		RunnerID:         "runner-b",
+		Status:           model.RunnerActive,
+		CPUUtil:          0.2,
+		MemUtil:          0.2,
+		FreeDiskMB:       3000,
+		WorkerCapacity:   8,
+		AvailableWorkers: 4,
 	})
 
 	putBuild(t, st, model.Build{
-		BuildID:	"build-1",
-		ProjectID:	"web-app",
-		RunnerID:	"runner-a",
-		Status:		model.BuildFinished,
-		StartedAt:	1000,
-		UpdatedAt:	2000,
+		BuildID:   "build-1",
+		ProjectID: "web-app",
+		RunnerID:  "runner-a",
+		Status:    model.BuildFinished,
+		StartedAt: 1000,
+		UpdatedAt: 2000,
 	})
 
 	srv := New(st, "test-node")
@@ -175,32 +175,32 @@ func TestCombinedScoringWithCacheBonus(t *testing.T) {
 	st := openTestStore(t)
 
 	putRunner(t, st, model.Runner{
-		RunnerID:		"runner-a",
-		Status:			model.RunnerActive,
-		CPUUtil:		0.3,
-		MemUtil:		0.3,
-		FreeDiskMB:		2000,
-		WorkerCapacity:		4,
-		AvailableWorkers:	3,
+		RunnerID:         "runner-a",
+		Status:           model.RunnerActive,
+		CPUUtil:          0.3,
+		MemUtil:          0.3,
+		FreeDiskMB:       2000,
+		WorkerCapacity:   4,
+		AvailableWorkers: 3,
 	})
 
 	putRunner(t, st, model.Runner{
-		RunnerID:		"runner-b",
-		Status:			model.RunnerActive,
-		CPUUtil:		0.2,
-		MemUtil:		0.2,
-		FreeDiskMB:		3000,
-		WorkerCapacity:		4,
-		AvailableWorkers:	3,
+		RunnerID:         "runner-b",
+		Status:           model.RunnerActive,
+		CPUUtil:          0.2,
+		MemUtil:          0.2,
+		FreeDiskMB:       3000,
+		WorkerCapacity:   4,
+		AvailableWorkers: 3,
 	})
 
 	putBuild(t, st, model.Build{
-		BuildID:	"build-1",
-		ProjectID:	"web-app",
-		RunnerID:	"runner-a",
-		Status:		model.BuildFinished,
-		StartedAt:	1000,
-		UpdatedAt:	2000,
+		BuildID:   "build-1",
+		ProjectID: "web-app",
+		RunnerID:  "runner-a",
+		Status:    model.BuildFinished,
+		StartedAt: 1000,
+		UpdatedAt: 2000,
 	})
 
 	srv := New(st, "test-node")

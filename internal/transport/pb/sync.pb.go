@@ -10,17 +10,17 @@ import (
 
 const (
 	// Verify that this generated code is sufficiently up-to-date.
-	_	= protoimpl.EnforceVersion(20 - protoimpl.MinVersion)
+	_ = protoimpl.EnforceVersion(20 - protoimpl.MinVersion)
 	// Verify that runtime/protoimpl is sufficiently up-to-date.
-	_	= protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
+	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
 type HLC struct {
-	state		protoimpl.MessageState	`protogen:"open.v1"`
-	Ts		int64			`protobuf:"varint,1,opt,name=ts,proto3" json:"ts,omitempty"`
-	Seq		int64			`protobuf:"varint,2,opt,name=seq,proto3" json:"seq,omitempty"`
-	unknownFields	protoimpl.UnknownFields
-	sizeCache	protoimpl.SizeCache
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Ts            int64                  `protobuf:"varint,1,opt,name=ts,proto3" json:"ts,omitempty"`
+	Seq           int64                  `protobuf:"varint,2,opt,name=seq,proto3" json:"seq,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *HLC) Reset() {
@@ -34,7 +34,7 @@ func (x *HLC) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*HLC) ProtoMessage()	{}
+func (*HLC) ProtoMessage() {}
 
 func (x *HLC) ProtoReflect() protoreflect.Message {
 	mi := &file_v1_sync_proto_msgTypes[0]
@@ -67,15 +67,15 @@ func (x *HLC) GetSeq() int64 {
 }
 
 type Row struct {
-	state		protoimpl.MessageState	`protogen:"open.v1"`
-	Kind		string			`protobuf:"bytes,1,opt,name=kind,proto3" json:"kind,omitempty"`
-	Key		string			`protobuf:"bytes,2,opt,name=key,proto3" json:"key,omitempty"`
-	Owner		string			`protobuf:"bytes,3,opt,name=owner,proto3" json:"owner,omitempty"`
-	Hlc		*HLC			`protobuf:"bytes,4,opt,name=hlc,proto3" json:"hlc,omitempty"`
-	Tombstone	bool			`protobuf:"varint,5,opt,name=tombstone,proto3" json:"tombstone,omitempty"`
-	Payload		[]byte			`protobuf:"bytes,6,opt,name=payload,proto3" json:"payload,omitempty"`
-	unknownFields	protoimpl.UnknownFields
-	sizeCache	protoimpl.SizeCache
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Kind          string                 `protobuf:"bytes,1,opt,name=kind,proto3" json:"kind,omitempty"`
+	Key           string                 `protobuf:"bytes,2,opt,name=key,proto3" json:"key,omitempty"`
+	Owner         string                 `protobuf:"bytes,3,opt,name=owner,proto3" json:"owner,omitempty"`
+	Hlc           *HLC                   `protobuf:"bytes,4,opt,name=hlc,proto3" json:"hlc,omitempty"`
+	Tombstone     bool                   `protobuf:"varint,5,opt,name=tombstone,proto3" json:"tombstone,omitempty"`
+	Payload       []byte                 `protobuf:"bytes,6,opt,name=payload,proto3" json:"payload,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Row) Reset() {
@@ -89,7 +89,7 @@ func (x *Row) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*Row) ProtoMessage()	{}
+func (*Row) ProtoMessage() {}
 
 func (x *Row) ProtoReflect() protoreflect.Message {
 	mi := &file_v1_sync_proto_msgTypes[1]
@@ -150,14 +150,14 @@ func (x *Row) GetPayload() []byte {
 }
 
 type PullRequest struct {
-	state		protoimpl.MessageState	`protogen:"open.v1"`
-	NodeId		string			`protobuf:"bytes,1,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
-	Watermarks	map[string]*HLC		`protobuf:"bytes,2,rep,name=watermarks,proto3" json:"watermarks,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	Checksums	map[string]uint64	`protobuf:"bytes,3,rep,name=checksums,proto3" json:"checksums,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"varint,2,opt,name=value"`
-	EventWatermark	*HLC			`protobuf:"bytes,4,opt,name=event_watermark,json=eventWatermark,proto3" json:"event_watermark,omitempty"`
-	EventChecksum	uint64			`protobuf:"varint,5,opt,name=event_checksum,json=eventChecksum,proto3" json:"event_checksum,omitempty"`
-	unknownFields	protoimpl.UnknownFields
-	sizeCache	protoimpl.SizeCache
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	NodeId         string                 `protobuf:"bytes,1,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
+	Watermarks     map[string]*HLC        `protobuf:"bytes,2,rep,name=watermarks,proto3" json:"watermarks,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	Checksums      map[string]uint64      `protobuf:"bytes,3,rep,name=checksums,proto3" json:"checksums,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"varint,2,opt,name=value"`
+	EventWatermark *HLC                   `protobuf:"bytes,4,opt,name=event_watermark,json=eventWatermark,proto3" json:"event_watermark,omitempty"`
+	EventChecksum  uint64                 `protobuf:"varint,5,opt,name=event_checksum,json=eventChecksum,proto3" json:"event_checksum,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *PullRequest) Reset() {
@@ -171,7 +171,7 @@ func (x *PullRequest) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*PullRequest) ProtoMessage()	{}
+func (*PullRequest) ProtoMessage() {}
 
 func (x *PullRequest) ProtoReflect() protoreflect.Message {
 	mi := &file_v1_sync_proto_msgTypes[2]
@@ -225,14 +225,14 @@ func (x *PullRequest) GetEventChecksum() uint64 {
 }
 
 type Event struct {
-	state		protoimpl.MessageState	`protogen:"open.v1"`
-	RunnerId	string			`protobuf:"bytes,1,opt,name=runner_id,json=runnerId,proto3" json:"runner_id,omitempty"`
-	Seq		int64			`protobuf:"varint,2,opt,name=seq,proto3" json:"seq,omitempty"`
-	Type		string			`protobuf:"bytes,3,opt,name=type,proto3" json:"type,omitempty"`
-	Payload		string			`protobuf:"bytes,4,opt,name=payload,proto3" json:"payload,omitempty"`
-	Hlc		*HLC			`protobuf:"bytes,5,opt,name=hlc,proto3" json:"hlc,omitempty"`
-	unknownFields	protoimpl.UnknownFields
-	sizeCache	protoimpl.SizeCache
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RunnerId      string                 `protobuf:"bytes,1,opt,name=runner_id,json=runnerId,proto3" json:"runner_id,omitempty"`
+	Seq           int64                  `protobuf:"varint,2,opt,name=seq,proto3" json:"seq,omitempty"`
+	Type          string                 `protobuf:"bytes,3,opt,name=type,proto3" json:"type,omitempty"`
+	Payload       string                 `protobuf:"bytes,4,opt,name=payload,proto3" json:"payload,omitempty"`
+	Hlc           *HLC                   `protobuf:"bytes,5,opt,name=hlc,proto3" json:"hlc,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Event) Reset() {
@@ -246,7 +246,7 @@ func (x *Event) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*Event) ProtoMessage()	{}
+func (*Event) ProtoMessage() {}
 
 func (x *Event) ProtoReflect() protoreflect.Message {
 	mi := &file_v1_sync_proto_msgTypes[3]
@@ -300,14 +300,14 @@ func (x *Event) GetHlc() *HLC {
 }
 
 type PullResponse struct {
-	state		protoimpl.MessageState	`protogen:"open.v1"`
-	NodeId		string			`protobuf:"bytes,1,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
-	Rows		[]*Row			`protobuf:"bytes,2,rep,name=rows,proto3" json:"rows,omitempty"`
-	Checksums	map[string]uint64	`protobuf:"bytes,3,rep,name=checksums,proto3" json:"checksums,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"varint,2,opt,name=value"`
-	Events		[]*Event		`protobuf:"bytes,4,rep,name=events,proto3" json:"events,omitempty"`
-	EventChecksum	uint64			`protobuf:"varint,5,opt,name=event_checksum,json=eventChecksum,proto3" json:"event_checksum,omitempty"`
-	unknownFields	protoimpl.UnknownFields
-	sizeCache	protoimpl.SizeCache
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	NodeId        string                 `protobuf:"bytes,1,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
+	Rows          []*Row                 `protobuf:"bytes,2,rep,name=rows,proto3" json:"rows,omitempty"`
+	Checksums     map[string]uint64      `protobuf:"bytes,3,rep,name=checksums,proto3" json:"checksums,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"varint,2,opt,name=value"`
+	Events        []*Event               `protobuf:"bytes,4,rep,name=events,proto3" json:"events,omitempty"`
+	EventChecksum uint64                 `protobuf:"varint,5,opt,name=event_checksum,json=eventChecksum,proto3" json:"event_checksum,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *PullResponse) Reset() {
@@ -321,7 +321,7 @@ func (x *PullResponse) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*PullResponse) ProtoMessage()	{}
+func (*PullResponse) ProtoMessage() {}
 
 func (x *PullResponse) ProtoReflect() protoreflect.Message {
 	mi := &file_v1_sync_proto_msgTypes[4]
@@ -422,8 +422,8 @@ const file_v1_sync_proto_rawDesc = "" +
 	"\x04Pull\x12\x14.takl.v1.PullRequest\x1a\x15.takl.v1.PullResponseB\x1fZ\x1dtakl/internal/transport/pb;pbb\x06proto3"
 
 var (
-	file_v1_sync_proto_rawDescOnce	sync.Once
-	file_v1_sync_proto_rawDescData	[]byte
+	file_v1_sync_proto_rawDescOnce sync.Once
+	file_v1_sync_proto_rawDescData []byte
 )
 
 func file_v1_sync_proto_rawDescGZIP() []byte {
@@ -463,7 +463,7 @@ var file_v1_sync_proto_depIdxs = []int32{
 	0,
 }
 
-func init()	{ file_v1_sync_proto_init() }
+func init() { file_v1_sync_proto_init() }
 func file_v1_sync_proto_init() {
 	if File_v1_sync_proto != nil {
 		return
@@ -471,16 +471,16 @@ func file_v1_sync_proto_init() {
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
-			GoPackagePath:	reflect.TypeOf(x{}).PkgPath(),
-			RawDescriptor:	unsafe.Slice(unsafe.StringData(file_v1_sync_proto_rawDesc), len(file_v1_sync_proto_rawDesc)),
-			NumEnums:	0,
-			NumMessages:	8,
-			NumExtensions:	0,
-			NumServices:	1,
+			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
+			RawDescriptor: unsafe.Slice(unsafe.StringData(file_v1_sync_proto_rawDesc), len(file_v1_sync_proto_rawDesc)),
+			NumEnums:      0,
+			NumMessages:   8,
+			NumExtensions: 0,
+			NumServices:   1,
 		},
-		GoTypes:		file_v1_sync_proto_goTypes,
-		DependencyIndexes:	file_v1_sync_proto_depIdxs,
-		MessageInfos:		file_v1_sync_proto_msgTypes,
+		GoTypes:           file_v1_sync_proto_goTypes,
+		DependencyIndexes: file_v1_sync_proto_depIdxs,
+		MessageInfos:      file_v1_sync_proto_msgTypes,
 	}.Build()
 	File_v1_sync_proto = out.File
 	file_v1_sync_proto_goTypes = nil

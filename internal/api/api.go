@@ -14,8 +14,8 @@ import (
 )
 
 type Server struct {
-	store	*store.Store
-	nodeID	string
+	store  *store.Store
+	nodeID string
 }
 
 func New(st *store.Store, nodeID string) *Server {
@@ -124,9 +124,9 @@ func (s *Server) handleCapacityCheck(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, status, map[string]any{
-		"allowed":	allowed,
-		"current":	activeBuilds,
-		"max":		maxBuilds,
+		"allowed": allowed,
+		"current": activeBuilds,
+		"max":     maxBuilds,
 	})
 }
 
@@ -290,8 +290,8 @@ func (s *Server) handleSummary(w http.ResponseWriter, _ *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"node_id":	s.nodeID,
-		"runners":	items,
+		"node_id": s.nodeID,
+		"runners": items,
 	})
 }
 
@@ -302,12 +302,12 @@ func (s *Server) handleCluster(w http.ResponseWriter, _ *http.Request) {
 		return
 	}
 	var (
-		activeRunners	int
-		capacity	int
-		avail		int
-		activeBuilds	int
-		cpuUtil		float64
-		memUtil		float64
+		activeRunners int
+		capacity      int
+		avail         int
+		activeBuilds  int
+		cpuUtil       float64
+		memUtil       float64
 	)
 	for _, r := range runners {
 		if r.Status == model.RunnerActive {
@@ -324,12 +324,12 @@ func (s *Server) handleCluster(w http.ResponseWriter, _ *http.Request) {
 		memUtil /= float64(activeRunners)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"active_runners":	activeRunners,
-		"worker_capacity":	capacity,
-		"available_workers":	avail,
-		"active_builds":	activeBuilds,
-		"avg_cpu_util":		cpuUtil,
-		"avg_mem_util":		memUtil,
+		"active_runners":    activeRunners,
+		"worker_capacity":   capacity,
+		"available_workers": avail,
+		"active_builds":     activeBuilds,
+		"avg_cpu_util":      cpuUtil,
+		"avg_mem_util":      memUtil,
 	})
 }
 
@@ -350,8 +350,8 @@ func (s *Server) handleHotProjects(w http.ResponseWriter, r *http.Request) {
 	}
 
 	type projectFreq struct {
-		ProjectID	string	`json:"project_id"`
-		Count		int	`json:"count"`
+		ProjectID string `json:"project_id"`
+		Count     int    `json:"count"`
 	}
 
 	var freqs []projectFreq
@@ -397,8 +397,8 @@ func writeError(w http.ResponseWriter, err error) {
 }
 
 type ScoredRunner struct {
-	Runner	model.Runner	`json:"runner"`
-	Score	float64		`json:"score"`
+	Runner model.Runner `json:"runner"`
+	Score  float64      `json:"score"`
 }
 
 func scoreRunner(r model.Runner) float64 {

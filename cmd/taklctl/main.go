@@ -13,9 +13,9 @@ import (
 )
 
 var (
-	addr	= flag.String("addr", "http://127.0.0.1:8090", "takld query api address")
-	limit	= flag.Int("limit", 100, "max events to fetch")
-	jsonOut	= flag.Bool("json", false, "output raw json")
+	addr    = flag.String("addr", "http://127.0.0.1:8090", "takld query api address")
+	limit   = flag.Int("limit", 100, "max events to fetch")
+	jsonOut = flag.Bool("json", false, "output raw json")
 )
 
 func main() {

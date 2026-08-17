@@ -11,22 +11,22 @@ import (
 	"google.golang.org/grpc"
 
 	"takl/internal/agent"
+	"takl/internal/backend/stub"
 	"takl/internal/engine/store"
 	"takl/internal/model"
-	"takl/internal/backend/stub"
 	"takl/internal/transport"
 )
 
 type node struct {
-	id	string
-	st	*store.Store
-	ag	*agent.Agent
-	clock	*model.Clock
-	addr	string
-	server	*grpc.Server
-	client	*transport.Client
-	stopper	chan struct{}
-	closed	bool
+	id      string
+	st      *store.Store
+	ag      *agent.Agent
+	clock   *model.Clock
+	addr    string
+	server  *grpc.Server
+	client  *transport.Client
+	stopper chan struct{}
+	closed  bool
 }
 
 func newNode(t *testing.T, nodeID string, seed int64, clock *model.Clock) *node {
@@ -58,14 +58,14 @@ func newNodeAt(t *testing.T, nodeID string, seed int64, clock *model.Clock, dbPa
 	}()
 
 	n := &node{
-		id:		nodeID,
-		st:		st,
-		ag:		ag,
-		clock:		clock,
-		addr:		lis.Addr().String(),
-		server:		gs,
-		client:		transport.NewClient(5 * time.Second),
-		stopper:	stopper,
+		id:      nodeID,
+		st:      st,
+		ag:      ag,
+		clock:   clock,
+		addr:    lis.Addr().String(),
+		server:  gs,
+		client:  transport.NewClient(5 * time.Second),
+		stopper: stopper,
 	}
 	t.Cleanup(n.shutdown)
 	return n

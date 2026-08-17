@@ -9,27 +9,27 @@ import (
 )
 
 type Event struct {
-	Type	EventType
-	NodeID	string
-	IP	string
+	Type   EventType
+	NodeID string
+	IP     string
 }
 
 type EventType int
 
 const (
-	EventJoin	EventType	= iota
+	EventJoin EventType = iota
 	EventLeave
 	EventUpdate
 )
 
 type Member struct {
-	NodeID		string
-	SyncAddr	string
+	NodeID   string
+	SyncAddr string
 }
 
 type Cluster struct {
-	mlist	*memberlist.Memberlist
-	events	chan Event
+	mlist  *memberlist.Memberlist
+	events chan Event
 }
 
 func NewCluster(nodeID string, bindPort int, syncAddr string, seeds []string) (*Cluster, error) {
@@ -58,8 +58,8 @@ func NewCluster(nodeID string, bindPort int, syncAddr string, seeds []string) (*
 	}
 
 	return &Cluster{
-		mlist:	mlist,
-		events:	events,
+		mlist:  mlist,
+		events: events,
 	}, nil
 }
 
@@ -76,8 +76,8 @@ func (c *Cluster) Members() []Member {
 		var meta NodeMeta
 		if err := json.Unmarshal(member.Meta, &meta); err == nil && meta.SyncAddr != "" {
 			nodes = append(nodes, Member{
-				NodeID:		member.Name,
-				SyncAddr:	meta.SyncAddr,
+				NodeID:   member.Name,
+				SyncAddr: meta.SyncAddr,
 			})
 		} else {
 

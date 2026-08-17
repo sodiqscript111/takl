@@ -4,9 +4,9 @@ import (
 	"reflect"
 	"testing"
 
+	"takl/internal/backend/stub"
 	"takl/internal/engine/store"
 	"takl/internal/model"
-	"takl/internal/backend/stub"
 )
 
 func newTestAgent(t *testing.T, seed int64) (*Agent, *store.Store, *stub.Stub) {

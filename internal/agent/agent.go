@@ -24,16 +24,16 @@ type Backend interface {
 }
 
 type Agent struct {
-	nodeID			string
-	epoch			string
-	store			*store.Store
-	backend			Backend
-	clock			*model.Clock
-	cluster			*membership.Cluster
-	seen			map[store.Kind]map[string]bool
-	highMetricsCount	int
-	normalMetricsCount	int
-	isDraining		bool
+	nodeID             string
+	epoch              string
+	store              *store.Store
+	backend            Backend
+	clock              *model.Clock
+	cluster            *membership.Cluster
+	seen               map[store.Kind]map[string]bool
+	highMetricsCount   int
+	normalMetricsCount int
+	isDraining         bool
 }
 
 func New(nodeID string, st *store.Store, backend Backend, clock *model.Clock, cluster *membership.Cluster) *Agent {
@@ -42,13 +42,13 @@ func New(nodeID string, st *store.Store, backend Backend, clock *model.Clock, cl
 	epoch := fmt.Sprintf("%x", b)
 
 	return &Agent{
-		nodeID:		nodeID,
-		epoch:		epoch,
-		store:		st,
-		backend:	backend,
-		clock:		clock,
-		cluster:	cluster,
-		seen:		map[store.Kind]map[string]bool{},
+		nodeID:  nodeID,
+		epoch:   epoch,
+		store:   st,
+		backend: backend,
+		clock:   clock,
+		cluster: cluster,
+		seen:    map[store.Kind]map[string]bool{},
 	}
 }
 

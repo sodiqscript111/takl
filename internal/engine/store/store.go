@@ -15,29 +15,29 @@ import (
 type Kind string
 
 const (
-	KindRunner	Kind	= "runner"
-	KindBuild	Kind	= "build"
-	KindQueue	Kind	= "queue"
-	KindContainer	Kind	= "container"
-	KindMount	Kind	= "mount"
-	KindEvent	Kind	= "event"
-	KindImage	Kind	= "image"
+	KindRunner    Kind = "runner"
+	KindBuild     Kind = "build"
+	KindQueue     Kind = "queue"
+	KindContainer Kind = "container"
+	KindMount     Kind = "mount"
+	KindEvent     Kind = "event"
+	KindImage     Kind = "image"
 )
 
 var Kinds = []Kind{KindRunner, KindBuild, KindQueue, KindContainer, KindMount, KindImage}
 
 type Row struct {
-	Kind		Kind
-	Key		string
-	Owner		string
-	HLC		model.HLC
-	Tombstone	bool
-	Payload		[]byte
+	Kind      Kind
+	Key       string
+	Owner     string
+	HLC       model.HLC
+	Tombstone bool
+	Payload   []byte
 }
 
 type Store struct {
-	db	*sql.DB
-	nodeID	string
+	db     *sql.DB
+	nodeID string
 }
 
 func Open(path, nodeID string) (*Store, error) {
@@ -379,10 +379,10 @@ func (s *Store) Events(limit int) ([]model.Event, error) {
 	out := []model.Event{}
 	for rows.Next() {
 		var (
-			e	model.Event
-			seq	int64
-			ts, sq	int64
-			pl	string
+			e      model.Event
+			seq    int64
+			ts, sq int64
+			pl     string
 		)
 		if err := rows.Scan(&seq, &e.Type, &e.RunnerID, &pl, &ts, &sq); err != nil {
 			return nil, err
@@ -416,9 +416,9 @@ func (s *Store) EventsSince(wm model.HLC) ([]model.Event, error) {
 	out := []model.Event{}
 	for rows.Next() {
 		var (
-			e	model.Event
-			ts, sq	int64
-			pl	string
+			e      model.Event
+			ts, sq int64
+			pl     string
 		)
 		if err := rows.Scan(&e.RunnerID, &e.Seq, &e.Type, &pl, &ts, &sq); err != nil {
 			return nil, err
@@ -522,9 +522,9 @@ func (s *Store) Close() error {
 
 func scanRow(sc interface{ Scan(...any) error }) (Row, error) {
 	var (
-		r	Row
-		ts, sq	int64
-		tomb	int
+		r      Row
+		ts, sq int64
+		tomb   int
 	)
 	if err := sc.Scan(&r.Kind, &r.Key, &r.Owner, &ts, &sq, &tomb, &r.Payload); err != nil {
 		return Row{}, err

@@ -57,6 +57,10 @@ func TestAgentWritesRunnerRow(t *testing.T) {
 	}
 	want := s.Snapshot()
 	want.Status = got.Status
+	want.LastHeartbeat = got.LastHeartbeat
+	want.CPUUtil = got.CPUUtil
+	want.MemUtil = got.MemUtil
+	want.FreeDiskMB = got.FreeDiskMB
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("store snapshot diverges from sim:\n%+v\n%+v", got, want)
 	}

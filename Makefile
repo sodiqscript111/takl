@@ -1,14 +1,22 @@
 GO ?= go
 PROTOC ?= protoc
 
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
+COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+DATE    ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
+LDFLAGS  = -s -w \
+  -X takl/internal/version.Version=$(VERSION) \
+  -X takl/internal/version.GitCommit=$(COMMIT) \
+  -X takl/internal/version.BuildDate=$(DATE)
+
 .PHONY: all build test lint vet fmt-check cover clean gen
 
 all: build test lint
 
 build:
 	mkdir -p bin
-	$(GO) build -o bin/takld ./cmd/takld
-	$(GO) build -o bin/taklctl ./cmd/taklctl
+	$(GO) build -ldflags="$(LDFLAGS)" -o bin/takld ./cmd/takld
+	$(GO) build -ldflags="$(LDFLAGS)" -o bin/taklctl ./cmd/taklctl
 
 gen:
 	$(PROTOC) -I proto --go_out=. --go_opt=module=takl --go-grpc_out=. --go-grpc_opt=module=takl proto/v1/sync.proto

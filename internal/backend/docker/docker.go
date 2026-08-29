@@ -53,7 +53,6 @@ func (b *Backend) Snapshot() model.Runner {
 	}
 
 	freeDiskMB := int64(0)
-	// Fallback to current directory if root fails, safe across OS
 	path := "/"
 	if _, err := os.Stat(path); os.IsNotExist(err) {
 		path = "."

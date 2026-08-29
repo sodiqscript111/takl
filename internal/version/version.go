@@ -1,7 +1,11 @@
 package version
 
-var Version = "0.0.0"
+var (
+	Version   = "dev"
+	GitCommit = "unknown"
+	BuildDate = "unknown"
+)
 
 func Info() string {
-	return "takl " + Version
+	return "takl " + Version + " (" + GitCommit + ") built " + BuildDate
 }

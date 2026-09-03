@@ -103,6 +103,9 @@ curl http://127.0.0.1:8090/api/v1/runners/best?project=demo
 
 # Node C joins as well
 ./bin/takld --node-id node-c --http-addr 127.0.0.1:8093 --sync-addr 127.0.0.1:8103 --bind 7943 --join 127.0.0.1:7941 --db takl-c.db
+
+# VPS/multi-host note: set a reachable advertise IP per node
+# ./bin/takld ... --http-addr 0.0.0.0:8090 --sync-addr 0.0.0.0:8100 --advertise-addr 10.0.1.12 --cluster-profile wan
 ```
 
 Any node can now answer for the whole fleet:

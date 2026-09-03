@@ -32,11 +32,17 @@ type Cluster struct {
 	events chan Event
 }
 
-func NewCluster(nodeID string, bindPort int, syncAddr string, seeds []string) (*Cluster, error) {
+func NewCluster(nodeID string, bindPort int, advertiseAddr string, syncAddr string, profile string, seeds []string) (*Cluster, error) {
 	config := memberlist.DefaultLANConfig()
+	if profile == "wan" {
+		config = memberlist.DefaultWANConfig()
+	}
 	config.Name = nodeID
 	config.BindPort = bindPort
 	config.AdvertisePort = bindPort
+	if advertiseAddr != "" {
+		config.AdvertiseAddr = advertiseAddr
+	}
 
 	events := make(chan Event, 256)
 

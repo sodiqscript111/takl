@@ -38,9 +38,11 @@ func main() {
 	nodeID := flag.String("node-id", "", "unique node id (overrides config)")
 	httpAddr := flag.String("http-addr", "", "http query api listen address")
 	syncAddr := flag.String("sync-addr", "", "gRPC sync listen address")
+	advertiseAddr := flag.String("advertise-addr", "", "advertise IP for peers and runner identity")
 	peers := flag.String("peers", "", "comma-separated gRPC sync peer addresses (legacy)")
 	bindPort := flag.Int("bind", 0, "SWIM gossip port")
 	join := flag.String("join", "", "comma-separated seeds to join (SWIM)")
+	clusterProfile := flag.String("cluster-profile", "", "memberlist profile: lan or wan")
 	dbPath := flag.String("db", "", "sqlite database path")
 	capacity := flag.Int("capacity", 0, "runner worker capacity")
 	region := flag.String("region", "", "region label")
@@ -69,12 +71,16 @@ func main() {
 			cfg.Network.HTTPAddr = *httpAddr
 		case "sync-addr":
 			cfg.Network.SyncAddr = *syncAddr
+		case "advertise-addr":
+			cfg.Network.AdvertiseAddr = *advertiseAddr
 		case "peers":
 			cfg.Cluster.Peers = strings.Split(*peers, ",")
 		case "bind":
 			cfg.Cluster.Bind = *bindPort
 		case "join":
 			cfg.Cluster.Join = strings.Split(*join, ",")
+		case "cluster-profile":
+			cfg.Cluster.Profile = *clusterProfile
 		case "db":
 			cfg.Storage.DBPath = *dbPath
 		case "capacity":
@@ -90,6 +96,30 @@ func main() {
 		}
 	})
 
+	runnerIP := resolveAdvertiseIP(cfg.Network.AdvertiseAddr)
+	if runnerIP == "" {
+		runnerIP = discoverAdvertiseIP(cfg.Network.SyncAddr, cfg.Network.HTTPAddr)
+	}
+	if runnerIP == "" {
+		runnerIP = "127.0.0.1"
+		slog.Warn("could not auto-detect advertise IP; using loopback", "ip", runnerIP)
+	}
+
+	advertisedSyncAddr, err := advertisedAddr(cfg.Network.SyncAddr, runnerIP)
+	if err != nil {
+		slog.Error("invalid sync address", "addr", cfg.Network.SyncAddr, "err", err)
+		os.Exit(1)
+	}
+
+	profile := strings.ToLower(strings.TrimSpace(cfg.Cluster.Profile))
+	if profile == "" {
+		profile = "lan"
+	}
+	if profile != "lan" && profile != "wan" {
+		slog.Warn("invalid cluster profile; defaulting to lan", "profile", cfg.Cluster.Profile)
+		profile = "lan"
+	}
+
 	hostname, _ := os.Hostname()
 
 	st, err := store.Open(cfg.Storage.DBPath, cfg.Cluster.NodeID)
@@ -103,11 +133,10 @@ func main() {
 
 	var backend agent.Backend
 	if cfg.Execution.Backend == "docker" {
-		var err error
 		backend, err = docker.New(docker.Config{
 			NodeID:   cfg.Cluster.NodeID,
 			Hostname: hostname,
-			IP:       "127.0.0.1",
+			IP:       runnerIP,
 			Region:   cfg.Execution.Region,
 			Version:  version.Version,
 			Capacity: cfg.Execution.Capacity,
@@ -120,7 +149,7 @@ func main() {
 		backend = stub.New(stub.Config{
 			NodeID:   cfg.Cluster.NodeID,
 			Hostname: hostname,
-			IP:       "127.0.0.1",
+			IP:       runnerIP,
 			Region:   cfg.Execution.Region,
 			Version:  version.Version,
 			Capacity: cfg.Execution.Capacity,
@@ -135,8 +164,7 @@ func main() {
 				seeds = append(seeds, s)
 			}
 		}
-		var err error
-		cluster, err = membership.NewCluster(cfg.Cluster.NodeID, cfg.Cluster.Bind, cfg.Network.SyncAddr, seeds)
+		cluster, err = membership.NewCluster(cfg.Cluster.NodeID, cfg.Cluster.Bind, runnerIP, advertisedSyncAddr, profile, seeds)
 		if err != nil {
 			slog.Error("membership cluster", "err", err)
 			os.Exit(1)
@@ -175,7 +203,7 @@ func main() {
 		gs := grpc.NewServer()
 		transport.NewServer(cfg.Cluster.NodeID, st).RegisterWith(gs)
 		go func() {
-			slog.Info("sync server", "addr", cfg.Network.SyncAddr)
+			slog.Info("sync server", "addr", cfg.Network.SyncAddr, "advertise", advertisedSyncAddr)
 			if err := gs.Serve(lis); err != nil {
 				slog.Error("sync server", "err", err)
 				stop()
@@ -241,4 +269,91 @@ func main() {
 	defer cancel()
 	_ = httpSrv.Shutdown(shutdownCtx)
 	slog.Info("shutdown complete")
+}
+
+func advertisedAddr(listenAddr, advertiseIP string) (string, error) {
+	if listenAddr == "" {
+		return "", nil
+	}
+	host, port, err := net.SplitHostPort(listenAddr)
+	if err != nil {
+		return "", err
+	}
+	switch host {
+	case "", "0.0.0.0", "::":
+		host = advertiseIP
+	}
+	return net.JoinHostPort(host, port), nil
+}
+
+func discoverAdvertiseIP(addrs ...string) string {
+	for _, addr := range addrs {
+		host, _, err := net.SplitHostPort(addr)
+		if err != nil {
+			continue
+		}
+		if ip := resolveAdvertiseIP(host); ip != "" {
+			return ip
+		}
+	}
+
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return ""
+	}
+	for _, iface := range ifaces {
+		if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 {
+			continue
+		}
+		addrs, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
+		for _, addr := range addrs {
+			ipNet, ok := addr.(*net.IPNet)
+			if !ok {
+				continue
+			}
+			ip := ipNet.IP
+			if ip == nil || ip.IsLoopback() || ip.IsUnspecified() {
+				continue
+			}
+			if v4 := ip.To4(); v4 != nil {
+				return v4.String()
+			}
+		}
+	}
+	return ""
+}
+
+func resolveAdvertiseIP(value string) string {
+	host := strings.TrimSpace(value)
+	if host == "" {
+		return ""
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		if ip.IsLoopback() || ip.IsUnspecified() {
+			return ""
+		}
+		return ip.String()
+	}
+	ips, err := net.LookupIP(host)
+	if err != nil {
+		return ""
+	}
+	for _, ip := range ips {
+		if ip.IsLoopback() || ip.IsUnspecified() {
+			continue
+		}
+		if v4 := ip.To4(); v4 != nil {
+			return v4.String()
+		}
+	}
+	for _, ip := range ips {
+		if ip.IsLoopback() || ip.IsUnspecified() {
+			continue
+		}
+		return ip.String()
+	}
+	return ""
 }

@@ -6,13 +6,13 @@ import (
 )
 
 func TestClusterJoinAndLeave(t *testing.T) {
-	node1, err := NewCluster("node1", 7001, "127.0.0.1:8001", nil)
+	node1, err := NewCluster("node1", 7001, "127.0.0.1", "127.0.0.1:8001", "lan", nil)
 	if err != nil {
 		t.Fatalf("node1: %v", err)
 	}
 	defer node1.Shutdown()
 
-	node2, err := NewCluster("node2", 7002, "127.0.0.1:8002", []string{"127.0.0.1:7001"})
+	node2, err := NewCluster("node2", 7002, "127.0.0.1", "127.0.0.1:8002", "lan", []string{"127.0.0.1:7001"})
 	if err != nil {
 		t.Fatalf("node2: %v", err)
 	}

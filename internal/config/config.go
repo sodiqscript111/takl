@@ -9,15 +9,17 @@ import (
 )
 
 type Cluster struct {
-	NodeID string   `yaml:"node_id"`
-	Bind   int      `yaml:"bind"`
-	Join   []string `yaml:"join"`
-	Peers  []string `yaml:"peers"`
+	NodeID  string   `yaml:"node_id"`
+	Bind    int      `yaml:"bind"`
+	Join    []string `yaml:"join"`
+	Peers   []string `yaml:"peers"`
+	Profile string   `yaml:"profile"`
 }
 
 type Network struct {
-	HTTPAddr string `yaml:"http_addr"`
-	SyncAddr string `yaml:"sync_addr"`
+	HTTPAddr      string `yaml:"http_addr"`
+	SyncAddr      string `yaml:"sync_addr"`
+	AdvertiseAddr string `yaml:"advertise_addr"`
 }
 
 type Storage struct {
@@ -47,14 +49,16 @@ type Config struct {
 func Default() *Config {
 	return &Config{
 		Cluster: Cluster{
-			NodeID: "runner-1",
-			Bind:   7946,
-			Join:   []string{},
-			Peers:  []string{},
+			NodeID:  "runner-1",
+			Bind:    7946,
+			Join:    []string{},
+			Peers:   []string{},
+			Profile: "lan",
 		},
 		Network: Network{
-			HTTPAddr: "127.0.0.1:8090",
-			SyncAddr: "127.0.0.1:8100",
+			HTTPAddr:      "127.0.0.1:8090",
+			SyncAddr:      "127.0.0.1:8100",
+			AdvertiseAddr: "",
 		},
 		Storage: Storage{
 			DBPath: "takl.db",

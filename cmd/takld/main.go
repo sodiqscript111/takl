@@ -48,6 +48,8 @@ func main() {
 	tlsCAFile := flag.String("sync-tls-ca-file", "", "sync mTLS CA PEM path")
 	tlsCertFile := flag.String("sync-tls-cert-file", "", "sync mTLS cert PEM path")
 	tlsKeyFile := flag.String("sync-tls-key-file", "", "sync mTLS key PEM path")
+	allowInsecureSync := flag.Bool("allow-insecure-sync", false, "allow plaintext sync on non-loopback addresses")
+	allowInsecureGossip := flag.Bool("allow-insecure-gossip", false, "allow wan profile without gossip key")
 	dbPath := flag.String("db", "", "sqlite database path")
 	capacity := flag.Int("capacity", 0, "runner worker capacity")
 	region := flag.String("region", "", "region label")
@@ -108,6 +110,15 @@ func main() {
 		}
 	})
 
+	profile := strings.ToLower(strings.TrimSpace(cfg.Cluster.Profile))
+	if profile == "" {
+		profile = "lan"
+	}
+	if profile != "lan" && profile != "wan" {
+		slog.Warn("invalid cluster profile; defaulting to lan", "profile", cfg.Cluster.Profile)
+		profile = "lan"
+	}
+
 	runnerIP := resolveAdvertiseIP(cfg.Network.AdvertiseAddr)
 	if runnerIP == "" {
 		runnerIP = discoverAdvertiseIP(cfg.Network.SyncAddr, cfg.Network.HTTPAddr)
@@ -123,17 +134,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	profile := strings.ToLower(strings.TrimSpace(cfg.Cluster.Profile))
-	if profile == "" {
-		profile = "lan"
-	}
-	if profile != "lan" && profile != "wan" {
-		slog.Warn("invalid cluster profile; defaulting to lan", "profile", cfg.Cluster.Profile)
-		profile = "lan"
-	}
-
-	hostname, _ := os.Hostname()
-
+	peerList := compactList(cfg.Cluster.Peers)
+	seedList := compactList(cfg.Cluster.Join)
 	tlsFiles := transport.TLSFiles{
 		CAFile:   cfg.Network.SyncTLS.CAFile,
 		CertFile: cfg.Network.SyncTLS.CertFile,
@@ -145,6 +147,17 @@ func main() {
 			os.Exit(1)
 		}
 	}
+	if cfg.Network.SyncAddr != "" && addrExposed(cfg.Network.SyncAddr) && (len(peerList) > 0 || cfg.Cluster.Bind > 0) && !tlsFiles.Enabled() && !*allowInsecureSync {
+		slog.Error("refusing insecure sync on non-loopback address", "sync_addr", cfg.Network.SyncAddr)
+		os.Exit(1)
+	}
+	if cfg.Cluster.Bind > 0 && profile == "wan" && strings.TrimSpace(cfg.Cluster.GossipKey) == "" && !*allowInsecureGossip {
+		slog.Error("refusing wan gossip without gossip key")
+		os.Exit(1)
+	}
+
+	hostname, _ := os.Hostname()
+
 	var clientCreds credentials.TransportCredentials
 	var serverCreds credentials.TransportCredentials
 	if tlsFiles.Enabled() {
@@ -196,13 +209,7 @@ func main() {
 
 	var cluster *membership.Cluster
 	if cfg.Cluster.Bind > 0 {
-		var seeds []string
-		for _, s := range cfg.Cluster.Join {
-			if s = strings.TrimSpace(s); s != "" {
-				seeds = append(seeds, s)
-			}
-		}
-		cluster, err = membership.NewCluster(cfg.Cluster.NodeID, cfg.Cluster.Bind, runnerIP, advertisedSyncAddr, profile, cfg.Cluster.GossipKey, seeds)
+		cluster, err = membership.NewCluster(cfg.Cluster.NodeID, cfg.Cluster.Bind, runnerIP, advertisedSyncAddr, profile, cfg.Cluster.GossipKey, seedList)
 		if err != nil {
 			slog.Error("membership cluster", "err", err)
 			os.Exit(1)
@@ -267,7 +274,7 @@ func main() {
 		}()
 	}
 
-	if len(cfg.Cluster.Peers) > 0 || cluster != nil {
+	if len(peerList) > 0 || cluster != nil {
 		var peerProvider func() []string
 		if cluster != nil {
 			peerProvider = func() []string {
@@ -278,12 +285,6 @@ func main() {
 				return addrs
 			}
 		} else {
-			var peerList []string
-			for _, p := range cfg.Cluster.Peers {
-				if p = strings.TrimSpace(p); p != "" {
-					peerList = append(peerList, p)
-				}
-			}
 			peerProvider = func() []string { return peerList }
 		}
 
@@ -398,4 +399,43 @@ func resolveAdvertiseIP(value string) string {
 		return ip.String()
 	}
 	return ""
+}
+
+func compactList(in []string) []string {
+	out := make([]string, 0, len(in))
+	for _, v := range in {
+		v = strings.TrimSpace(v)
+		if v != "" {
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
+func addrExposed(addr string) bool {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		return false
+	}
+	host = strings.TrimSpace(host)
+	if host == "" || host == "0.0.0.0" || host == "::" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	if ip == nil {
+		if host == "localhost" {
+			return false
+		}
+		ips, err := net.LookupIP(host)
+		if err != nil {
+			return true
+		}
+		for _, ip = range ips {
+			if !ip.IsLoopback() {
+				return true
+			}
+		}
+		return false
+	}
+	return !ip.IsLoopback()
 }

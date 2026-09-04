@@ -1,8 +1,11 @@
 package membership
 
 import (
+	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/hashicorp/memberlist"
@@ -32,7 +35,7 @@ type Cluster struct {
 	events chan Event
 }
 
-func NewCluster(nodeID string, bindPort int, advertiseAddr string, syncAddr string, profile string, seeds []string) (*Cluster, error) {
+func NewCluster(nodeID string, bindPort int, advertiseAddr string, syncAddr string, profile string, gossipKey string, seeds []string) (*Cluster, error) {
 	config := memberlist.DefaultLANConfig()
 	if profile == "wan" {
 		config = memberlist.DefaultWANConfig()
@@ -42,6 +45,13 @@ func NewCluster(nodeID string, bindPort int, advertiseAddr string, syncAddr stri
 	config.AdvertisePort = bindPort
 	if advertiseAddr != "" {
 		config.AdvertiseAddr = advertiseAddr
+	}
+	if gossipKey != "" {
+		key, err := parseSecretKey(gossipKey)
+		if err != nil {
+			return nil, err
+		}
+		config.SecretKey = key
 	}
 
 	events := make(chan Event, 256)
@@ -69,6 +79,27 @@ func NewCluster(nodeID string, bindPort int, advertiseAddr string, syncAddr stri
 	}, nil
 }
 
+func parseSecretKey(raw string) ([]byte, error) {
+	v := strings.TrimSpace(raw)
+	if v == "" {
+		return nil, nil
+	}
+	if decoded, err := base64.StdEncoding.DecodeString(v); err == nil {
+		if validSecretKeyLen(len(decoded)) {
+			return decoded, nil
+		}
+	}
+	plain := []byte(v)
+	if validSecretKeyLen(len(plain)) {
+		return plain, nil
+	}
+	return nil, fmt.Errorf("invalid gossip key length %d, expected 16, 24, or 32 bytes (raw or base64)", len(plain))
+}
+
+func validSecretKeyLen(n int) bool {
+	return n == 16 || n == 24 || n == 32
+}
+
 func (c *Cluster) Events() <-chan Event {
 	return c.events
 }
@@ -86,7 +117,6 @@ func (c *Cluster) Members() []Member {
 				SyncAddr: meta.SyncAddr,
 			})
 		} else {
-
 			slog.Warn("member without usable sync metadata", "node", member.Name, "err", err)
 		}
 	}

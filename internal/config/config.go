@@ -9,17 +9,25 @@ import (
 )
 
 type Cluster struct {
-	NodeID  string   `yaml:"node_id"`
-	Bind    int      `yaml:"bind"`
-	Join    []string `yaml:"join"`
-	Peers   []string `yaml:"peers"`
-	Profile string   `yaml:"profile"`
+	NodeID    string   `yaml:"node_id"`
+	Bind      int      `yaml:"bind"`
+	Join      []string `yaml:"join"`
+	Peers     []string `yaml:"peers"`
+	Profile   string   `yaml:"profile"`
+	GossipKey string   `yaml:"gossip_key"`
+}
+
+type SyncTLS struct {
+	CAFile   string `yaml:"ca_file"`
+	CertFile string `yaml:"cert_file"`
+	KeyFile  string `yaml:"key_file"`
 }
 
 type Network struct {
-	HTTPAddr      string `yaml:"http_addr"`
-	SyncAddr      string `yaml:"sync_addr"`
-	AdvertiseAddr string `yaml:"advertise_addr"`
+	HTTPAddr      string  `yaml:"http_addr"`
+	SyncAddr      string  `yaml:"sync_addr"`
+	AdvertiseAddr string  `yaml:"advertise_addr"`
+	SyncTLS       SyncTLS `yaml:"sync_tls"`
 }
 
 type Storage struct {
@@ -45,20 +53,21 @@ type Config struct {
 	Agent     Agent     `yaml:"agent"`
 }
 
-// Default returns a configuration with sensible default values.
 func Default() *Config {
 	return &Config{
 		Cluster: Cluster{
-			NodeID:  "runner-1",
-			Bind:    7946,
-			Join:    []string{},
-			Peers:   []string{},
-			Profile: "lan",
+			NodeID:    "runner-1",
+			Bind:      7946,
+			Join:      []string{},
+			Peers:     []string{},
+			Profile:   "lan",
+			GossipKey: "",
 		},
 		Network: Network{
 			HTTPAddr:      "127.0.0.1:8090",
 			SyncAddr:      "127.0.0.1:8100",
 			AdvertiseAddr: "",
+			SyncTLS:       SyncTLS{},
 		},
 		Storage: Storage{
 			DBPath: "takl.db",
@@ -75,8 +84,6 @@ func Default() *Config {
 	}
 }
 
-// Load reads a YAML configuration file from the given path.
-// It merges the parsed configuration over the provided default config.
 func Load(path string, base *Config) (*Config, error) {
 	if path == "" {
 		return base, nil
@@ -85,13 +92,11 @@ func Load(path string, base *Config) (*Config, error) {
 	b, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			// If file is missing, just return base config
 			return base, nil
 		}
 		return nil, fmt.Errorf("read config file: %w", err)
 	}
 
-	// Unmarshal overrides base
 	if err := yaml.Unmarshal(b, base); err != nil {
 		return nil, fmt.Errorf("parse config file: %w", err)
 	}

@@ -7,6 +7,7 @@ import (
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/connectivity"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/keepalive"
 
@@ -18,13 +19,14 @@ type Client struct {
 	mu      sync.Mutex
 	conns   map[string]*grpc.ClientConn
 	timeout time.Duration
+	creds   credentials.TransportCredentials
 }
 
-func NewClient(timeout time.Duration) *Client {
+func NewClient(timeout time.Duration, creds credentials.TransportCredentials) *Client {
 	if timeout <= 0 {
 		timeout = 5 * time.Second
 	}
-	return &Client{conns: map[string]*grpc.ClientConn{}, timeout: timeout}
+	return &Client{conns: map[string]*grpc.ClientConn{}, timeout: timeout, creds: creds}
 }
 
 func (c *Client) conn(addr string) (*grpc.ClientConn, error) {
@@ -39,8 +41,12 @@ func (c *Client) conn(addr string) (*grpc.ClientConn, error) {
 		_ = cc.Close()
 		delete(c.conns, addr)
 	}
+	creds := c.creds
+	if creds == nil {
+		creds = insecure.NewCredentials()
+	}
 	cc, err := grpc.NewClient(addr,
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithTransportCredentials(creds),
 		grpc.WithKeepaliveParams(keepalive.ClientParameters{
 			Time:    30 * time.Second,
 			Timeout: 10 * time.Second,

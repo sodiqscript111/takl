@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 
 	"takl/internal/agent"
 	"takl/internal/api"
@@ -43,6 +44,10 @@ func main() {
 	bindPort := flag.Int("bind", 0, "SWIM gossip port")
 	join := flag.String("join", "", "comma-separated seeds to join (SWIM)")
 	clusterProfile := flag.String("cluster-profile", "", "memberlist profile: lan or wan")
+	gossipKey := flag.String("gossip-key", "", "memberlist gossip key (16/24/32 bytes raw or base64)")
+	tlsCAFile := flag.String("sync-tls-ca-file", "", "sync mTLS CA PEM path")
+	tlsCertFile := flag.String("sync-tls-cert-file", "", "sync mTLS cert PEM path")
+	tlsKeyFile := flag.String("sync-tls-key-file", "", "sync mTLS key PEM path")
 	dbPath := flag.String("db", "", "sqlite database path")
 	capacity := flag.Int("capacity", 0, "runner worker capacity")
 	region := flag.String("region", "", "region label")
@@ -62,7 +67,6 @@ func main() {
 		}
 	}
 
-	// Override from CLI flags if explicitly set
 	flag.Visit(func(f *flag.Flag) {
 		switch f.Name {
 		case "node-id":
@@ -81,6 +85,14 @@ func main() {
 			cfg.Cluster.Join = strings.Split(*join, ",")
 		case "cluster-profile":
 			cfg.Cluster.Profile = *clusterProfile
+		case "gossip-key":
+			cfg.Cluster.GossipKey = *gossipKey
+		case "sync-tls-ca-file":
+			cfg.Network.SyncTLS.CAFile = *tlsCAFile
+		case "sync-tls-cert-file":
+			cfg.Network.SyncTLS.CertFile = *tlsCertFile
+		case "sync-tls-key-file":
+			cfg.Network.SyncTLS.KeyFile = *tlsKeyFile
 		case "db":
 			cfg.Storage.DBPath = *dbPath
 		case "capacity":
@@ -121,6 +133,32 @@ func main() {
 	}
 
 	hostname, _ := os.Hostname()
+
+	tlsFiles := transport.TLSFiles{
+		CAFile:   cfg.Network.SyncTLS.CAFile,
+		CertFile: cfg.Network.SyncTLS.CertFile,
+		KeyFile:  cfg.Network.SyncTLS.KeyFile,
+	}
+	if tlsFiles.Enabled() {
+		if err := tlsFiles.Validate(); err != nil {
+			slog.Error("invalid sync tls config", "err", err)
+			os.Exit(1)
+		}
+	}
+	var clientCreds credentials.TransportCredentials
+	var serverCreds credentials.TransportCredentials
+	if tlsFiles.Enabled() {
+		clientCreds, err = transport.LoadClientTLSCredentials(tlsFiles)
+		if err != nil {
+			slog.Error("load sync tls client credentials", "err", err)
+			os.Exit(1)
+		}
+		serverCreds, err = transport.LoadServerTLSCredentials(tlsFiles)
+		if err != nil {
+			slog.Error("load sync tls server credentials", "err", err)
+			os.Exit(1)
+		}
+	}
 
 	st, err := store.Open(cfg.Storage.DBPath, cfg.Cluster.NodeID)
 	if err != nil {
@@ -164,7 +202,7 @@ func main() {
 				seeds = append(seeds, s)
 			}
 		}
-		cluster, err = membership.NewCluster(cfg.Cluster.NodeID, cfg.Cluster.Bind, runnerIP, advertisedSyncAddr, profile, seeds)
+		cluster, err = membership.NewCluster(cfg.Cluster.NodeID, cfg.Cluster.Bind, runnerIP, advertisedSyncAddr, profile, cfg.Cluster.GossipKey, seeds)
 		if err != nil {
 			slog.Error("membership cluster", "err", err)
 			os.Exit(1)
@@ -200,7 +238,11 @@ func main() {
 			slog.Error("sync listen", "err", err)
 			os.Exit(1)
 		}
-		gs := grpc.NewServer()
+		var serverOpts []grpc.ServerOption
+		if serverCreds != nil {
+			serverOpts = append(serverOpts, grpc.Creds(serverCreds))
+		}
+		gs := grpc.NewServer(serverOpts...)
 		transport.NewServer(cfg.Cluster.NodeID, st).RegisterWith(gs)
 		go func() {
 			slog.Info("sync server", "addr", cfg.Network.SyncAddr, "advertise", advertisedSyncAddr)
@@ -245,7 +287,7 @@ func main() {
 			peerProvider = func() []string { return peerList }
 		}
 
-		client = transport.NewClient(5 * time.Second)
+		client = transport.NewClient(5*time.Second, clientCreds)
 		eng := sync.New(cfg.Cluster.NodeID, st, clock, client, peerProvider, cfg.Agent.SyncInterval)
 		go func() {
 			slog.Info("sync engine started")

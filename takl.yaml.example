@@ -1,14 +1,19 @@
 cluster:
   node_id: "node-1"
   bind: 7946
-  profile: "lan" # or "wan" for cross-datacenter/VPS links
-  # join:
-  #   - "192.168.1.10:7946"
+  profile: "lan"
+  join: []
+  peers: []
+  gossip_key: ""
 
 network:
   http_addr: "0.0.0.0:8090"
   sync_addr: "0.0.0.0:8100"
-  advertise_addr: "" # set to node private/public IP for multi-host clusters
+  advertise_addr: ""
+  sync_tls:
+    ca_file: ""
+    cert_file: ""
+    key_file: ""
 
 storage:
   db_path: "takl.db"

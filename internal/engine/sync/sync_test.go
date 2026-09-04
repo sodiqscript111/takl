@@ -64,7 +64,7 @@ func newNodeAt(t *testing.T, nodeID string, seed int64, clock *model.Clock, dbPa
 		clock:   clock,
 		addr:    lis.Addr().String(),
 		server:  gs,
-		client:  transport.NewClient(5 * time.Second),
+		client:  transport.NewClient(5*time.Second, nil),
 		stopper: stopper,
 	}
 	t.Cleanup(n.shutdown)
@@ -83,7 +83,7 @@ func (n *node) shutdown() {
 }
 
 func (n *node) engine(peers []string) *Engine {
-	client := transport.NewClient(time.Second)
+	client := transport.NewClient(time.Second, nil)
 	return New(n.id, n.st, n.clock, client, func() []string { return peers }, 10*time.Millisecond)
 }
 

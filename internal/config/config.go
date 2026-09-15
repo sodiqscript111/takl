@@ -35,7 +35,6 @@ type Storage struct {
 }
 
 type Execution struct {
-	Backend  string `yaml:"backend"`
 	Capacity int    `yaml:"capacity"`
 	Region   string `yaml:"region"`
 }
@@ -73,7 +72,6 @@ func Default() *Config {
 			DBPath: "takl.db",
 		},
 		Execution: Execution{
-			Backend:  "docker",
 			Capacity: 4,
 			Region:   "us-east-1",
 		},

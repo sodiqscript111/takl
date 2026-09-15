@@ -18,7 +18,6 @@ import (
 
 	"takl/internal/agent"
 	"takl/internal/api"
-	"takl/internal/backend/docker"
 	"takl/internal/backend/stub"
 	"takl/internal/config"
 	"takl/internal/engine/store"
@@ -55,7 +54,6 @@ func main() {
 	region := flag.String("region", "", "region label")
 	tick := flag.Duration("tick", 0, "agent sampling interval")
 	syncInterval := flag.Duration("sync-interval", 0, "sync round interval")
-	backendType := flag.String("backend", "", "backend type (stub or docker)")
 
 	flag.Parse()
 
@@ -105,8 +103,6 @@ func main() {
 			cfg.Agent.Tick = *tick
 		case "sync-interval":
 			cfg.Agent.SyncInterval = *syncInterval
-		case "backend":
-			cfg.Execution.Backend = *backendType
 		}
 	})
 
@@ -182,30 +178,14 @@ func main() {
 
 	clock := model.NewClock(nil)
 
-	var backend agent.Backend
-	if cfg.Execution.Backend == "docker" {
-		backend, err = docker.New(docker.Config{
-			NodeID:   cfg.Cluster.NodeID,
-			Hostname: hostname,
-			IP:       runnerIP,
-			Region:   cfg.Execution.Region,
-			Version:  version.Version,
-			Capacity: cfg.Execution.Capacity,
-		})
-		if err != nil {
-			slog.Error("failed to init docker backend", "err", err)
-			os.Exit(1)
-		}
-	} else {
-		backend = stub.New(stub.Config{
-			NodeID:   cfg.Cluster.NodeID,
-			Hostname: hostname,
-			IP:       runnerIP,
-			Region:   cfg.Execution.Region,
-			Version:  version.Version,
-			Capacity: cfg.Execution.Capacity,
-		})
-	}
+	backend := stub.New(stub.Config{
+		NodeID:   cfg.Cluster.NodeID,
+		Hostname: hostname,
+		IP:       runnerIP,
+		Region:   cfg.Execution.Region,
+		Version:  version.Version,
+		Capacity: cfg.Execution.Capacity,
+	})
 
 	var cluster *membership.Cluster
 	if cfg.Cluster.Bind > 0 {
@@ -219,7 +199,7 @@ func main() {
 
 	ag := agent.New(cfg.Cluster.NodeID, st, backend, clock, cluster)
 
-	httpSrv := &http.Server{Addr: cfg.Network.HTTPAddr, Handler: api.New(st, cfg.Cluster.NodeID).Handler()}
+	httpSrv := &http.Server{Addr: cfg.Network.HTTPAddr, Handler: api.New(st, cfg.Cluster.NodeID, clock).Handler()}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

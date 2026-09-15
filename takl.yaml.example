@@ -19,7 +19,6 @@ storage:
   db_path: "takl.db"
 
 execution:
-  backend: "docker"
   capacity: 4
   region: "us-east-1"
 

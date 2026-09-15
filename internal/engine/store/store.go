@@ -15,16 +15,12 @@ import (
 type Kind string
 
 const (
-	KindRunner    Kind = "runner"
-	KindBuild     Kind = "build"
-	KindQueue     Kind = "queue"
-	KindContainer Kind = "container"
-	KindMount     Kind = "mount"
-	KindEvent     Kind = "event"
-	KindImage     Kind = "image"
+	KindRunner Kind = "runner"
+	KindMeta   Kind = "meta"
+	KindEvent  Kind = "event"
 )
 
-var Kinds = []Kind{KindRunner, KindBuild, KindQueue, KindContainer, KindMount, KindImage}
+var Kinds = []Kind{KindRunner, KindMeta}
 
 type Row struct {
 	Kind      Kind

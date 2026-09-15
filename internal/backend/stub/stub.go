@@ -61,39 +61,10 @@ func (s *Stub) Snapshot() model.Runner {
 		CPUUtil:          cpuUtil,
 		MemUtil:          memUtil,
 		FreeDiskMB:       freeDiskMB,
-		BuildCacheMB:     0,
 		WorkerCapacity:   s.config.Capacity,
 		AvailableWorkers: s.config.Capacity,
-		ActiveBuilds:     0,
-		QueueDepth:       0,
-		Containers:       0,
-		Mounts:           0,
-		Labels:           map[string]string{"type": "stub"},
+		Labels:           map[string]string{},
 	}
 }
 
 func (s *Stub) Step() {}
-
-func (s *Stub) DrainEvents() []model.Event {
-	return nil
-}
-
-func (s *Stub) Builds() []model.Build {
-	return nil
-}
-
-func (s *Stub) Queues() []model.QueueStats {
-	return nil
-}
-
-func (s *Stub) Containers() []model.Container {
-	return nil
-}
-
-func (s *Stub) Mounts() []model.Mount {
-	return nil
-}
-
-func (s *Stub) Images() []model.Image {
-	return nil
-}

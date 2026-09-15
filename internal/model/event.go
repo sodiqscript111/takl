@@ -3,24 +3,9 @@ package model
 type EventType string
 
 const (
-	EventRunnerJoined      EventType = "RunnerJoined"
-	EventRunnerLeft        EventType = "RunnerLeft"
-	EventRunnerDraining    EventType = "RunnerDraining"
-	EventBuildStarted      EventType = "BuildStarted"
-	EventBuildFinished     EventType = "BuildFinished"
-	EventBuildFailed       EventType = "BuildFailed"
-	EventQueueDepthChanged EventType = "QueueDepthChanged"
-	EventContainerCreated  EventType = "ContainerCreated"
-	EventContainerDeleted  EventType = "ContainerDeleted"
-	EventMountCreated      EventType = "MountCreated"
-	EventMountRemoved      EventType = "MountRemoved"
-	EventDeployStarted     EventType = "DeployStarted"
-	EventDeployCompleted   EventType = "DeployCompleted"
-	EventDeployFailed      EventType = "DeployFailed"
-	EventDeployCancelled   EventType = "DeployCancelled"
-	EventServiceRegistered EventType = "ServiceRegistered"
-	EventImageDiscovered   EventType = "ImageDiscovered"
-	EventImagePruned       EventType = "ImagePruned"
+	EventRunnerJoined   EventType = "RunnerJoined"
+	EventRunnerLeft     EventType = "RunnerLeft"
+	EventRunnerDraining EventType = "RunnerDraining"
 )
 
 type Event struct {

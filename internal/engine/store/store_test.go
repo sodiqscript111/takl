@@ -104,27 +104,27 @@ func TestListExcludesTombstones(t *testing.T) {
 	st := openTest(t)
 	put := func(key string, ts int64) {
 		t.Helper()
-		if err := st.Put(Row{Kind: KindBuild, Key: key, Owner: "n", HLC: model.HLC{TS: ts}, Payload: []byte(key)}); err != nil {
+		if err := st.Put(Row{Kind: KindRunner, Key: key, Owner: "n", HLC: model.HLC{TS: ts}, Payload: []byte(key)}); err != nil {
 			t.Fatal(err)
 		}
 	}
-	put("b1", 1)
-	put("b2", 2)
-	if err := st.Delete(KindBuild, "b1", "n", model.HLC{TS: 3}); err != nil {
+	put("r1", 1)
+	put("r2", 2)
+	if err := st.Delete(KindRunner, "r1", "n", model.HLC{TS: 3}); err != nil {
 		t.Fatal(err)
 	}
 	var rows []Row
-	err := st.List(KindBuild, -1, 0, nil, func(r Row) bool {
+	err := st.List(KindRunner, -1, 0, nil, func(r Row) bool {
 		rows = append(rows, r)
 		return true
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(rows) != 1 || rows[0].Key != "b2" {
+	if len(rows) != 1 || rows[0].Key != "r2" {
 		t.Fatalf("tombstone leaked into list: %+v", rows)
 	}
-	if got, ok, _ := st.Get(KindBuild, "b1"); !ok || !got.Tombstone {
+	if got, ok, _ := st.Get(KindRunner, "r1"); !ok || !got.Tombstone {
 		t.Fatalf("tombstoned row should still be readable raw: %+v ok=%v", got, ok)
 	}
 }
@@ -133,15 +133,15 @@ func TestChangesSince(t *testing.T) {
 	st := openTest(t)
 	put := func(key string, ts, seq int64) {
 		t.Helper()
-		if err := st.Put(Row{Kind: KindBuild, Key: key, Owner: "n", HLC: model.HLC{TS: ts, Seq: seq}, Payload: []byte(key)}); err != nil {
+		if err := st.Put(Row{Kind: KindRunner, Key: key, Owner: "n", HLC: model.HLC{TS: ts, Seq: seq}, Payload: []byte(key)}); err != nil {
 			t.Fatal(err)
 		}
 	}
-	put("b1", 1, 0)
-	put("b2", 3, 0)
-	put("b3", 3, 2)
-	put("b4", 5, 0)
-	rows, err := st.ChangesSince(KindBuild, model.HLC{TS: 3, Seq: 1})
+	put("r1", 1, 0)
+	put("r2", 3, 0)
+	put("r3", 3, 2)
+	put("r4", 5, 0)
+	rows, err := st.ChangesSince(KindRunner, model.HLC{TS: 3, Seq: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -149,13 +149,13 @@ func TestChangesSince(t *testing.T) {
 	for _, r := range rows {
 		got[r.Key] = true
 	}
-	if len(rows) != 2 || !got["b3"] || !got["b4"] {
+	if len(rows) != 2 || !got["r3"] || !got["r4"] {
 		t.Fatalf("ChangesSince wrong: %v", got)
 	}
-	if err := st.Delete(KindBuild, "b2", "n", model.HLC{TS: 4, Seq: 0}); err != nil {
+	if err := st.Delete(KindRunner, "r2", "n", model.HLC{TS: 4, Seq: 0}); err != nil {
 		t.Fatal(err)
 	}
-	rows, err = st.ChangesSince(KindBuild, model.HLC{TS: 3, Seq: 2})
+	rows, err = st.ChangesSince(KindRunner, model.HLC{TS: 3, Seq: 2})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -168,7 +168,7 @@ func TestEvents(t *testing.T) {
 	st := openTest(t)
 	for i := 0; i < 3; i++ {
 		if err := st.AppendEvent(model.Event{
-			Type:     model.EventBuildStarted,
+			Type:     model.EventRunnerJoined,
 			RunnerID: "r1",
 			Payload:  map[string]any{"i": i},
 			HLC:      model.HLC{TS: int64(i + 1)},
@@ -184,7 +184,7 @@ func TestEvents(t *testing.T) {
 		t.Fatalf("want 3 events, got %d", len(evs))
 	}
 	for i, e := range evs {
-		if e.Seq != int64(i+1) || e.Type != model.EventBuildStarted {
+		if e.Seq != int64(i+1) || e.Type != model.EventRunnerJoined {
 			t.Fatalf("bad event %d: %+v", i, e)
 		}
 		if e.Payload["i"] != float64(i) {
@@ -225,10 +225,10 @@ func TestWatermarkMonotonic(t *testing.T) {
 	if wm.Seq != 5 {
 		t.Fatalf("watermark did not advance: %+v", wm)
 	}
-	if err := st.SetWatermark("peer2", KindBuild, model.HLC{TS: 1}); err != nil {
+	if err := st.SetWatermark("peer2", KindMeta, model.HLC{TS: 1}); err != nil {
 		t.Fatal(err)
 	}
-	if wm, _ := st.Watermark("peer1", KindBuild); wm != (model.HLC{}) {
+	if wm, _ := st.Watermark("peer1", KindMeta); wm != (model.HLC{}) {
 		t.Fatalf("watermark not scoped by kind: %+v", wm)
 	}
 }

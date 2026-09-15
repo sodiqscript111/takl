@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"takl/internal/engine/store"
@@ -29,23 +30,6 @@ func putRunner(t *testing.T, st *store.Store, r model.Runner) {
 	if err := st.Put(store.Row{
 		Kind:    store.KindRunner,
 		Key:     r.RunnerID,
-		Owner:   "test-node",
-		HLC:     model.HLC{TS: 1, Seq: 0},
-		Payload: payload,
-	}); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func putBuild(t *testing.T, st *store.Store, b model.Build) {
-	t.Helper()
-	payload, err := model.Encode(b)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := st.Put(store.Row{
-		Kind:    store.KindBuild,
-		Key:     b.BuildID,
 		Owner:   "test-node",
 		HLC:     model.HLC{TS: 1, Seq: 0},
 		Payload: payload,
@@ -87,7 +71,7 @@ func TestBestRunnerRanking(t *testing.T) {
 		AvailableWorkers: 2,
 	})
 
-	srv := New(st, "test-node")
+	srv := New(st, "test-node", model.NewClock(nil))
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/runners/best", nil)
 	rec := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(rec, req)
@@ -117,121 +101,82 @@ func TestBestRunnerRanking(t *testing.T) {
 	}
 }
 
-func TestCacheAwareLookup(t *testing.T) {
+func TestLabelsCRUD(t *testing.T) {
 	st := openTestStore(t)
+	clock := model.NewClock(nil)
 
 	putRunner(t, st, model.Runner{
-		RunnerID:         "runner-a",
+		RunnerID:         "runner-x",
 		Status:           model.RunnerActive,
-		CPUUtil:          0.3,
-		MemUtil:          0.3,
-		FreeDiskMB:       2000,
 		WorkerCapacity:   4,
-		AvailableWorkers: 2,
-	})
-
-	putRunner(t, st, model.Runner{
-		RunnerID:         "runner-b",
-		Status:           model.RunnerActive,
-		CPUUtil:          0.2,
-		MemUtil:          0.2,
-		FreeDiskMB:       3000,
-		WorkerCapacity:   8,
 		AvailableWorkers: 4,
+		Labels:           map[string]string{"role": "worker"},
 	})
 
-	putBuild(t, st, model.Build{
-		BuildID:   "build-1",
-		ProjectID: "web-app",
-		RunnerID:  "runner-a",
-		Status:    model.BuildFinished,
-		StartedAt: 1000,
-		UpdatedAt: 2000,
-	})
+	srv := New(st, "test-node", clock)
 
-	srv := New(st, "test-node")
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/runners/for-project/web-app", nil)
+	// 1. GET initial labels
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/runners/runner-x/labels", nil)
 	rec := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(rec, req)
-
 	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	var labels map[string]string
+	_ = json.NewDecoder(rec.Body).Decode(&labels)
+	if labels["role"] != "worker" {
+		t.Fatalf("expected role:worker, got %+v", labels)
 	}
 
-	var result []ScoredRunner
-	if err := json.NewDecoder(rec.Body).Decode(&result); err != nil {
-		t.Fatal(err)
+	// 2. PUT new labels
+	body := strings.NewReader(`{"env":"prod","gpu":"true"}`)
+	req = httptest.NewRequest(http.MethodPut, "/api/v1/runners/runner-x/labels", body)
+	rec = httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("PUT labels failed: %d %s", rec.Code, rec.Body.String())
 	}
 
-	if len(result) != 1 {
-		t.Fatalf("expected 1 runner, got %d", len(result))
+	// 3. GET merged labels
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/runners/runner-x/labels", nil)
+	rec = httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	labels = nil
+	_ = json.NewDecoder(rec.Body).Decode(&labels)
+	if labels["role"] != "worker" || labels["env"] != "prod" || labels["gpu"] != "true" {
+		t.Fatalf("labels not merged: %+v", labels)
 	}
-	if result[0].Runner.RunnerID != "runner-a" {
-		t.Errorf("expected runner-a, got %s", result[0].Runner.RunnerID)
+
+	// 4. GET /runners/best with label filtering matching the new label
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/runners/best?label=gpu:true", nil)
+	rec = httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("best runner with label filter failed: %d", rec.Code)
+	}
+	var scored []ScoredRunner
+	_ = json.NewDecoder(rec.Body).Decode(&scored)
+	if len(scored) != 1 || scored[0].Runner.RunnerID != "runner-x" {
+		t.Fatalf("expected runner-x matching gpu:true, got %+v", scored)
+	}
+
+	// 5. DELETE labels
+	req = httptest.NewRequest(http.MethodDelete, "/api/v1/runners/runner-x/labels", nil)
+	rec = httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d", rec.Code)
+	}
+
+	// 6. Verify extra labels removed, original remains
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/runners/runner-x/labels", nil)
+	rec = httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	labels = nil
+	_ = json.NewDecoder(rec.Body).Decode(&labels)
+	if labels["role"] != "worker" || labels["gpu"] != "" {
+		t.Fatalf("expected only original labels after delete, got %+v", labels)
 	}
 }
 
-func TestCombinedScoringWithCacheBonus(t *testing.T) {
-	st := openTestStore(t)
 
-	putRunner(t, st, model.Runner{
-		RunnerID:         "runner-a",
-		Status:           model.RunnerActive,
-		CPUUtil:          0.3,
-		MemUtil:          0.3,
-		FreeDiskMB:       2000,
-		WorkerCapacity:   4,
-		AvailableWorkers: 3,
-	})
-
-	putRunner(t, st, model.Runner{
-		RunnerID:         "runner-b",
-		Status:           model.RunnerActive,
-		CPUUtil:          0.2,
-		MemUtil:          0.2,
-		FreeDiskMB:       3000,
-		WorkerCapacity:   4,
-		AvailableWorkers: 3,
-	})
-
-	putBuild(t, st, model.Build{
-		BuildID:   "build-1",
-		ProjectID: "web-app",
-		RunnerID:  "runner-a",
-		Status:    model.BuildFinished,
-		StartedAt: 1000,
-		UpdatedAt: 2000,
-	})
-
-	srv := New(st, "test-node")
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/runners/best?project=web-app", nil)
-	rec := httptest.NewRecorder()
-	srv.Handler().ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
-	}
-
-	var result []ScoredRunner
-	if err := json.NewDecoder(rec.Body).Decode(&result); err != nil {
-		t.Fatal(err)
-	}
-
-	if len(result) != 2 {
-		t.Fatalf("expected 2 runners, got %d", len(result))
-	}
-
-	if result[0].Runner.RunnerID != "runner-a" {
-		t.Errorf("expected runner-a first (cache bonus), got %s (score=%.2f)",
-			result[0].Runner.RunnerID, result[0].Score)
-	}
-	if result[1].Runner.RunnerID != "runner-b" {
-		t.Errorf("expected runner-b second, got %s (score=%.2f)",
-			result[1].Runner.RunnerID, result[1].Score)
-	}
-
-	if result[0].Score <= result[1].Score {
-		t.Errorf("runner-a score (%.2f) should be > runner-b score (%.2f)",
-			result[0].Score, result[1].Score)
-	}
-}

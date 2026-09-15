@@ -57,8 +57,8 @@ func TestPullReturnsAllRows(t *testing.T) {
 	t.Cleanup(func() { st.Close() })
 	seedRow(t, st, store.KindRunner, "r1", "a", 1, false)
 	seedRow(t, st, store.KindRunner, "r2", "b", 2, false)
-	seedRow(t, st, store.KindBuild, "b1", "a", 3, false)
-	seedRow(t, st, store.KindBuild, "b9", "a", 4, true)
+	seedRow(t, st, store.KindMeta, "m1", "a", 3, false)
+	seedRow(t, st, store.KindMeta, "m9", "a", 4, true)
 
 	client := startBufconn(t, "a", st)
 	resp, err := client.Pull(context.Background(), &pb.PullRequest{Watermarks: map[string]*pb.HLC{}})
@@ -72,7 +72,7 @@ func TestPullReturnsAllRows(t *testing.T) {
 	if len(resp.Rows) != 4 {
 		t.Fatalf("want 4 rows, got %+v", resp.Rows)
 	}
-	if !got["runner\x00r1"] || !got["runner\x00r2"] || !got["build\x00b1"] || !got["build\x00b9"] {
+	if !got["runner\x00r1"] || !got["runner\x00r2"] || !got["meta\x00m1"] || !got["meta\x00m9"] {
 		t.Fatalf("rows missing: %+v", got)
 	}
 }
@@ -83,12 +83,12 @@ func TestPullRespectsWatermark(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { st.Close() })
-	seedRow(t, st, store.KindBuild, "b1", "a", 10, false)
-	seedRow(t, st, store.KindBuild, "b2", "a", 20, false)
-	seedRow(t, st, store.KindBuild, "b3", "a", 30, true)
+	seedRow(t, st, store.KindMeta, "m1", "a", 10, false)
+	seedRow(t, st, store.KindMeta, "m2", "a", 20, false)
+	seedRow(t, st, store.KindMeta, "m3", "a", 30, true)
 
 	client := startBufconn(t, "a", st)
-	wm := map[string]*pb.HLC{"build": {Ts: 20}}
+	wm := map[string]*pb.HLC{"meta": {Ts: 20}}
 	resp, err := client.Pull(context.Background(), &pb.PullRequest{Watermarks: wm})
 	if err != nil {
 		t.Fatal(err)
@@ -96,7 +96,7 @@ func TestPullRespectsWatermark(t *testing.T) {
 	if len(resp.Rows) != 1 {
 		t.Fatalf("want only rows after watermark, got %d", len(resp.Rows))
 	}
-	if resp.Rows[0].Key != "b3" {
+	if resp.Rows[0].Key != "m3" {
 		t.Fatalf("wrong row: %+v", resp.Rows[0])
 	}
 }

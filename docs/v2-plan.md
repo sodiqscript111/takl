@@ -97,13 +97,13 @@ JSON-decodes every row**. Fix that and the maps/algorithms actually matter.
 
 ---
 
-## Phase 6 — Make it useful for real projects (V2 features proper)
+## Phase 6 — Metadata Layer & Placement Enhancements
 
-The Docker backend currently only *observes*; nothing executes work. Minimum to be useful:
+Takl is strictly a decentralized metadata and placement oracle:
 
-- [ ] **Build/job records from real activity**: label convention (`takl.project=<id>`) on containers → populate `ProjectID` (now hardcoded `"none"`), derive Build rows from container lifecycle, fill image digests (currently empty → digest-based affinity is dead code with the docker backend).
-- [ ] **Worker accounting**: `ActiveBuilds`/`AvailableWorkers` from actual running takl-labeled containers instead of static capacity.
-- [ ] **CI integration recipe**: GitHub Actions/GitLab runner asks `POST /placements`, gets a runner + lease, dispatches over its own channel (SSH/runner-native). Takl stays a *scheduling oracle* — don't build remote execution into V2; that's a V3-sized liability.
+- [ ] **Rich node labeling & queries**: expand label operators in placement queries (e.g. key-exists, regex, numeric comparison like `ram_gb>=16`).
+- [ ] **Dynamic capacity reporting**: allow operators or agents to report ephemeral capacity via API (`POST /api/v1/runners/{id}/capacity`).
+- [ ] **Placement lease & reservation API**: implement optimistic lease reservations (`POST /api/v1/placements {labels, ttl}`) to prevent concurrent thundering herds without Takl needing to manage workload execution.
 
 ---
 
@@ -117,7 +117,7 @@ The Docker backend currently only *observes*; nothing executes work. Minimum to 
 | 3 Replication fixes | 3–4 d | trustable data |
 | 4 Perf (view + left-right) | 3–5 d | scale + fun |
 | 5 Packaging | 2–3 d | "users can use it" |
-| 6 Real backend | 4–6 d | actual project value |
+| 6 Placement enhancements | 2–3 d | production placement leases |
 
 Phases 1+2+5 are the critical path for "deployable on a VPS". Phase 4 is
 independent and can be done in parallel by a second person — it only touches

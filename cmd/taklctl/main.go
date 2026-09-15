@@ -69,14 +69,6 @@ func main() {
 			os.Exit(2)
 		}
 		path = "api/v1/runners/" + rest[0]
-	case "builds":
-		path = "api/v1/builds"
-	case "queues":
-		path = "api/v1/queues"
-	case "containers":
-		path = "api/v1/containers"
-	case "mounts":
-		path = "api/v1/mounts"
 	case "events":
 		path = fmt.Sprintf("api/v1/events?limit=%d", *limit)
 	case "summary":
@@ -339,7 +331,7 @@ func get(addr, path string) ([]byte, error) {
 
 func usage() {
 	fmt.Fprintln(os.Stderr, "usage: taklctl [-addr URL] [-json] <command> [args]")
-	fmt.Fprintln(os.Stderr, "commands: runners, runner <id>, builds, queues, containers, mounts, events, cluster")
+	fmt.Fprintln(os.Stderr, "commands: runners, runner <id>, events, summary, cluster")
 	fmt.Fprintln(os.Stderr, "security commands: keygen gossip | ca init | ca issue")
 }
 
@@ -354,13 +346,6 @@ func printTable(cmd string, body []byte) {
 		fmt.Fprintln(w, "ID\tHOSTNAME\tSTATUS\tCAPACITY\tACTIVE\tCPU%\tMEM%")
 		for _, r := range items {
 			fmt.Fprintf(w, "%v\t%v\t%v\t%v\t%v\t%.2f\t%.2f\n", r["runner_id"], r["hostname"], r["status"], r["worker_capacity"], r["active_builds"], r["cpu_util"], r["mem_util"])
-		}
-	case "builds":
-		var items []map[string]any
-		_ = json.Unmarshal(body, &items)
-		fmt.Fprintln(w, "ID\tRUNNER\tPROJECT\tSTATUS")
-		for _, b := range items {
-			fmt.Fprintf(w, "%v\t%v\t%v\t%v\n", b["build_id"], b["runner_id"], b["project_id"], b["status"])
 		}
 	case "events":
 		var items []map[string]any

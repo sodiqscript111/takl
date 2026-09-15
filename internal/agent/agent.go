@@ -15,12 +15,6 @@ import (
 type Backend interface {
 	Snapshot() model.Runner
 	Step()
-	DrainEvents() []model.Event
-	Builds() []model.Build
-	Queues() []model.QueueStats
-	Containers() []model.Container
-	Mounts() []model.Mount
-	Images() []model.Image
 }
 
 type Agent struct {
@@ -30,7 +24,6 @@ type Agent struct {
 	backend            Backend
 	clock              *model.Clock
 	cluster            *membership.Cluster
-	seen               map[store.Kind]map[string]bool
 	highMetricsCount   int
 	normalMetricsCount int
 	isDraining         bool
@@ -48,7 +41,6 @@ func New(nodeID string, st *store.Store, backend Backend, clock *model.Clock, cl
 		backend: backend,
 		clock:   clock,
 		cluster: cluster,
-		seen:    map[store.Kind]map[string]bool{},
 	}
 }
 
@@ -57,9 +49,6 @@ func (a *Agent) owner() string {
 }
 
 func (a *Agent) Start() error {
-	if err := a.hydrateSeen(); err != nil {
-		return err
-	}
 	hlc := a.clock.Tick()
 	runner := a.backend.Snapshot()
 	runner.Status = model.RunnerActive
@@ -69,31 +58,10 @@ func (a *Agent) Start() error {
 	return a.emit(model.EventRunnerJoined, nil, hlc)
 }
 
-func (a *Agent) hydrateSeen() error {
-	for _, kind := range []store.Kind{store.KindBuild, store.KindContainer, store.KindMount, store.KindImage} {
-		keys := make(map[string]bool)
-		err := a.store.List(kind, -1, 0, nil, func(r store.Row) bool {
-			if r.Owner == a.owner() {
-				keys[r.Key] = true
-			}
-			return true
-		})
-		if err != nil {
-			return err
-		}
-		if len(keys) > 0 {
-			a.seen[kind] = keys
-		}
-	}
-	return nil
-}
-
 func (a *Agent) Step() error {
 	a.backend.Step()
 	hlc := a.clock.Tick()
 	runner := a.backend.Snapshot()
-
-	events := a.backend.DrainEvents()
 
 	isHot := runner.CPUUtil >= 0.90 || runner.MemUtil >= 0.90 || runner.FreeDiskMB < 2000
 	if isHot {
@@ -116,42 +84,7 @@ func (a *Agent) Step() error {
 		runner.Status = model.RunnerActive
 	}
 
-	if err := a.putRow(store.KindRunner, runner.Key(), runner, hlc); err != nil {
-		return err
-	}
-	for _, q := range a.backend.Queues() {
-		if err := a.putRow(store.KindQueue, q.Key(), q, hlc); err != nil {
-			return err
-		}
-	}
-
-	if err := syncAll(a, store.KindBuild, a.backend.Builds(), func(b model.Build) string { return b.Key() }, hlc); err != nil {
-		return err
-	}
-	if err := syncAll(a, store.KindContainer, a.backend.Containers(), func(c model.Container) string { return c.Key() }, hlc); err != nil {
-		return err
-	}
-	if err := syncAll(a, store.KindMount, a.backend.Mounts(), func(m model.Mount) string { return m.Key() }, hlc); err != nil {
-		return err
-	}
-	if err := syncAll(a, store.KindImage, a.backend.Images(), func(i model.Image) string { return i.Key() }, hlc); err != nil {
-		return err
-	}
-	for _, e := range events {
-		if err := a.emit(e.Type, e.Payload, a.clock.Tick()); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func syncAll[T any](a *Agent, kind store.Kind, items []T, key func(T) string, hlc model.HLC) error {
-	for _, it := range items {
-		if err := a.putRow(kind, key(it), it, hlc); err != nil {
-			return err
-		}
-	}
-	return a.reconcile(kind, keySet(items, key), hlc)
+	return a.putRow(store.KindRunner, runner.Key(), runner, hlc)
 }
 
 func (a *Agent) Run(ctx context.Context, interval time.Duration) error {
@@ -194,7 +127,6 @@ func (a *Agent) handleMembershipEvents(ctx context.Context) {
 			case membership.EventUpdate:
 				continue
 			default:
-
 				slog.Warn("unknown membership event", "type", ev.Type)
 				continue
 			}
@@ -204,34 +136,6 @@ func (a *Agent) handleMembershipEvents(ctx context.Context) {
 			}
 		}
 	}
-}
-
-func (a *Agent) reconcile(kind store.Kind, current map[string]bool, hlc model.HLC) error {
-	seen := a.seen[kind]
-	if seen == nil {
-		seen = map[string]bool{}
-		a.seen[kind] = seen
-	}
-	for key := range seen {
-		if !current[key] {
-			if err := a.store.Delete(kind, key, a.owner(), hlc); err != nil {
-				return err
-			}
-			delete(seen, key)
-		}
-	}
-	for key := range current {
-		seen[key] = true
-	}
-	return nil
-}
-
-func keySet[T any](items []T, f func(T) string) map[string]bool {
-	out := make(map[string]bool, len(items))
-	for _, it := range items {
-		out[f(it)] = true
-	}
-	return out
 }
 
 func (a *Agent) putRow(kind store.Kind, key string, v any, hlc model.HLC) error {

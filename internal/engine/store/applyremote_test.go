@@ -13,7 +13,7 @@ func TestApplyRemoteBatch(t *testing.T) {
 	payloadB, _ := model.Encode(model.Runner{RunnerID: "r1", CPUUtil: 0.9})
 	rows := []Row{
 		{Kind: KindRunner, Key: "r1", Owner: "peer-x", HLC: model.HLC{TS: 10, Seq: 0}, Payload: payloadA},
-		{Kind: KindBuild, Key: "b1", Owner: "peer-x", HLC: model.HLC{TS: 20, Seq: 0}, Payload: []byte("b1")},
+		{Kind: KindMeta, Key: "m1", Owner: "peer-x", HLC: model.HLC{TS: 20, Seq: 0}, Payload: []byte("m1")},
 		{Kind: KindRunner, Key: "r1", Owner: "peer-x", HLC: model.HLC{TS: 5, Seq: 0}, Payload: payloadB},
 	}
 	if err := st.ApplyRemote("peer-x", rows); err != nil {
@@ -38,34 +38,31 @@ func TestApplyRemoteBatch(t *testing.T) {
 	if wm.TS != 10 {
 		t.Fatalf("runner watermark should be max batch hlc (10), got %+v", wm)
 	}
-	wm, _ = st.Watermark("peer-x", KindBuild)
+	wm, _ = st.Watermark("peer-x", KindMeta)
 	if wm.TS != 20 {
-		t.Fatalf("build watermark wrong: %+v", wm)
-	}
-	if wm, _ := st.Watermark("peer-x", KindQueue); wm != (model.HLC{}) {
-		t.Fatalf("kind not in batch advanced watermark: %+v", wm)
+		t.Fatalf("meta watermark wrong: %+v", wm)
 	}
 }
 
 func TestApplyRemoteTombstonesAndWatermark(t *testing.T) {
 	st := openTest(t)
 	rows := []Row{
-		{Kind: KindBuild, Key: "b1", Owner: "peer-x", HLC: model.HLC{TS: 1}, Payload: []byte("b1")},
+		{Kind: KindMeta, Key: "m1", Owner: "peer-x", HLC: model.HLC{TS: 1}, Payload: []byte("m1")},
 	}
 	if err := st.ApplyRemote("peer-x", rows); err != nil {
 		t.Fatal(err)
 	}
 	rows = []Row{
-		{Kind: KindBuild, Key: "b1", Owner: "peer-x", HLC: model.HLC{TS: 2}, Tombstone: true, Payload: []byte("b1")},
+		{Kind: KindMeta, Key: "m1", Owner: "peer-x", HLC: model.HLC{TS: 2}, Tombstone: true, Payload: []byte("m1")},
 	}
 	if err := st.ApplyRemote("peer-x", rows); err != nil {
 		t.Fatal(err)
 	}
-	got, ok, _ := st.Get(KindBuild, "b1")
+	got, ok, _ := st.Get(KindMeta, "m1")
 	if !ok || !got.Tombstone {
 		t.Fatalf("tombstone not applied: %+v ok=%v", got, ok)
 	}
-	if wm, _ := st.Watermark("peer-x", KindBuild); wm.TS != 2 {
+	if wm, _ := st.Watermark("peer-x", KindMeta); wm.TS != 2 {
 		t.Fatalf("watermark did not advance to tombstone hlc: %+v", wm)
 	}
 }
@@ -100,7 +97,7 @@ func TestApplyRemoteEmpty(t *testing.T) {
 func TestApplyRemoteIdempotent(t *testing.T) {
 	st := openTest(t)
 	batch := []Row{
-		{Kind: KindQueue, Key: "r1/builds", Owner: "peer-x", HLC: model.HLC{TS: 7, Seq: 3}, Payload: []byte("q")},
+		{Kind: KindMeta, Key: "r1/meta", Owner: "peer-x", HLC: model.HLC{TS: 7, Seq: 3}, Payload: []byte("q")},
 	}
 	for i := 0; i < 3; i++ {
 		if err := st.ApplyRemote("peer-x", batch); err != nil {
@@ -108,7 +105,7 @@ func TestApplyRemoteIdempotent(t *testing.T) {
 		}
 	}
 	var rows []Row
-	err := st.List(KindQueue, -1, 0, nil, func(r Row) bool {
+	err := st.List(KindMeta, -1, 0, nil, func(r Row) bool {
 		rows = append(rows, r)
 		return true
 	})
@@ -118,7 +115,7 @@ func TestApplyRemoteIdempotent(t *testing.T) {
 	if len(rows) != 1 {
 		t.Fatalf("replay created duplicates: %+v", rows)
 	}
-	if wm, _ := st.Watermark("peer-x", KindQueue); wm.Seq != 3 {
+	if wm, _ := st.Watermark("peer-x", KindMeta); wm.Seq != 3 {
 		t.Fatalf("watermark wrong after replay: %+v", wm)
 	}
 }

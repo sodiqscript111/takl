@@ -1,7 +1,8 @@
 # Takl V2 Plan — VPS Deployability + Performance
 
 Goal: take Takl from "local prototype" to something a user can `curl | install`
-onto 1–N VPSes, join into a secure cluster, and use for real project scheduling.
+onto 1–N VPSes, join into a secure cluster, and use for real decentralized
+placement decisions.
 
 Ordered by what actually blocks deployment. Performance work (swiss maps,
 left-right) is Phase 4 — it's real, but useless if nodes can't talk securely
@@ -60,9 +61,10 @@ arbitrary replicated state into every node.
 - [ ] **Tombstone resurrection** — GC deletes tombstones after 1h regardless of whether peers saw them. A node offline >1h can resurrect deleted rows on rejoin. Fix: track per-peer ack watermarks (highest HLC each known peer has pulled — the sync server already sees this in `PullRequest`) and only GC tombstones below `min(acks)` across live members, with a hard cap (e.g. 24h) for permanently-dead peers combined with `DeleteByNode`.
 - [ ] **Checksum blind spots** — `Store.Checksum` hashes only `key/hlc_ts/hlc_seq`, so rows differing in payload/owner/tombstone look identical. Include owner + tombstone + payload hash (e.g. FNV of payload) in the per-row hash. Keep XOR folding — it's order-independent, which is the property that matters.
 - [ ] **`DeleteByNode` HLC collision** — it stamps every tombstone with the same HLC; combined with LWW-by-owner tiebreak this is mostly fine, but bump `hlc_seq` per row to keep total order clean.
-- [ ] **Placement is advisory only** — `GET /runners/best` reserves nothing; 50 concurrent clients can all pick the same node between agent ticks. Add a **lease** API:
-  - `POST /api/v1/placements {project, ttl}` → node picks best runner, writes a `lease` row (new `Kind`) *owned by the answering node*, decrements a local in-memory available-worker shadow, returns `{runner_id, lease_id, expires_at}`.
-  - Leases replicate like any row; scoring subtracts active leases from `AvailableWorkers`. Expiry = tombstone after TTL. This is optimistic (two nodes can double-book briefly) but converges and diffuses far better than jitter alone. Do CP-style reservations later only if users actually need them.
+- [ ] **Placement is advisory by design** — `GET /runners/best` should remain an oracle answer, not a scheduler reservation. Improve anti-herd behavior without owning workload execution:
+  - Add `POST /api/v1/placements/evaluate {constraints, preferences, request_id}` to return a ranked top-K list, score breakdowns, rejection reasons, and a deterministic-but-diffused recommended node.
+  - Use request-scoped hashing, bounded jitter, optional caller identity, and short local cooldown hints to spread concurrent placement requests across near-equal candidates without writing durable workload leases.
+  - Keep the contract clear: Takl recommends placement; the caller remains responsible for starting work and handling failures.
 
 ---
 
@@ -73,6 +75,11 @@ Context first: **Go ≥1.24 built-in maps already use Swiss Tables**, so
 hot-path cost in Takl today is that **every HTTP query runs SQLite queries and
 JSON-decodes every row**. Fix that and the maps/algorithms actually matter.
 
+- [ ] **Profile first, then optimize** — add a repeatable profiling workflow before changing data structures:
+  - Enable `net/http/pprof` behind the same auth boundary as admin endpoints.
+  - Add `scripts/profile-placement.sh` / `scripts/profile-placement.ps1` to run a placement load scenario, collect CPU/heap profiles, and emit flame graphs.
+  - Store a short profiling note per optimization pass: workload size, p95 placement latency, CPU profile, heap profile, and the flame graph before/after.
+  - Use the flame graph to decide whether the next bottleneck is SQLite scans, JSON decode, scoring/sorting, lock contention, gRPC sync, or checksum calculation.
 - [ ] **In-memory materialized view (`internal/engine/view`)** — keep decoded domain objects (`map[string]model.Runner`, builds-by-project index, images-by-digest index) in RAM. SQLite stays the durable/replication store; the view is rebuilt on boot and updated on every `Put`/`ApplyRemote`.
 - [ ] **Left-right (or RCU) for the view** — exactly the right shape here: reads vastly outnumber writes, and writes are batchy (agent tick, sync round).
   - *Option A — atomic snapshot (RCU-style)*: writers clone-on-write the view and `atomic.Pointer.Swap` it. Dead simple, zero read-side coordination, ~1 alloc per write batch. **Recommended first.**
@@ -93,7 +100,7 @@ JSON-decodes every row**. Fix that and the maps/algorithms actually matter.
 - [ ] **Release pipeline** already exists — add `linux/arm64` (cheap VPSes are often ARM) and publish the Docker image to GHCR from `release.yml`.
 - [ ] **docker-compose example** for the "one VPS, docker backend" starter case, mounting `/var/run/docker.sock`.
 - [ ] **Docs**: `docs/deploy-vps.md` with the 3-node walkthrough — firewall rules (ufw lines for the port matrix), key generation, joining, verifying with `taklctl cluster`.
-- [ ] `GET /metrics` (Prometheus): sync round duration, rows applied, checksum mismatches, view swap latency, placement QPS. Plus `debug/pprof` behind the auth token.
+- [ ] `GET /metrics` (Prometheus): sync round duration, rows applied, checksum mismatches, view swap latency, placement QPS. Plus authenticated `debug/pprof` for flame graph collection.
 
 ---
 
@@ -103,7 +110,7 @@ Takl is strictly a decentralized metadata and placement oracle:
 
 - [ ] **Rich node labeling & queries**: expand label operators in placement queries (e.g. key-exists, regex, numeric comparison like `ram_gb>=16`).
 - [ ] **Dynamic capacity reporting**: allow operators or agents to report ephemeral capacity via API (`POST /api/v1/runners/{id}/capacity`).
-- [ ] **Placement lease & reservation API**: implement optimistic lease reservations (`POST /api/v1/placements {labels, ttl}`) to prevent concurrent thundering herds without Takl needing to manage workload execution.
+- [ ] **Explainable placement evaluation API**: return eligible nodes, rejected nodes, score components, freshness, matched constraints, and a recommended top-K result without taking ownership of workload execution.
 
 ---
 
@@ -115,9 +122,9 @@ Takl is strictly a decentralized metadata and placement oracle:
 | 1 Networking | 1–2 d | any multi-VPS use at all |
 | 2 Security | 3–4 d | internet-facing deployment |
 | 3 Replication fixes | 3–4 d | trustable data |
-| 4 Perf (view + left-right) | 3–5 d | scale + fun |
+| 4 Perf (profile + view + left-right) | 3–5 d | measured scale wins |
 | 5 Packaging | 2–3 d | "users can use it" |
-| 6 Placement enhancements | 2–3 d | production placement leases |
+| 6 Placement enhancements | 2–3 d | excellent oracle answers |
 
 Phases 1+2+5 are the critical path for "deployable on a VPS". Phase 4 is
 independent and can be done in parallel by a second person — it only touches

@@ -10,6 +10,8 @@ network:
   http_addr: "0.0.0.0:8090"
   sync_addr: "0.0.0.0:8100"
   advertise_addr: ""
+  admin_token: ""
+  enable_pprof: false
   sync_tls:
     ca_file: ""
     cert_file: ""

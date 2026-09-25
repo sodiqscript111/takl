@@ -39,6 +39,8 @@ func main() {
 	httpAddr := flag.String("http-addr", "", "http query api listen address")
 	syncAddr := flag.String("sync-addr", "", "gRPC sync listen address")
 	advertiseAddr := flag.String("advertise-addr", "", "advertise IP for peers and runner identity")
+	adminToken := flag.String("admin-token", "", "admin token for protected diagnostics")
+	enablePprof := flag.Bool("enable-pprof", false, "enable authenticated pprof diagnostics")
 	peers := flag.String("peers", "", "comma-separated gRPC sync peer addresses (legacy)")
 	bindPort := flag.Int("bind", 0, "SWIM gossip port")
 	join := flag.String("join", "", "comma-separated seeds to join (SWIM)")
@@ -77,6 +79,10 @@ func main() {
 			cfg.Network.SyncAddr = *syncAddr
 		case "advertise-addr":
 			cfg.Network.AdvertiseAddr = *advertiseAddr
+		case "admin-token":
+			cfg.Network.AdminToken = *adminToken
+		case "enable-pprof":
+			cfg.Network.EnablePprof = *enablePprof
 		case "peers":
 			cfg.Cluster.Peers = strings.Split(*peers, ",")
 		case "bind":
@@ -151,6 +157,10 @@ func main() {
 		slog.Error("refusing wan gossip without gossip key")
 		os.Exit(1)
 	}
+	if cfg.Network.EnablePprof && strings.TrimSpace(cfg.Network.AdminToken) == "" {
+		slog.Error("refusing to enable pprof without admin token")
+		os.Exit(1)
+	}
 
 	hostname, _ := os.Hostname()
 
@@ -199,7 +209,10 @@ func main() {
 
 	ag := agent.New(cfg.Cluster.NodeID, st, backend, clock, cluster)
 
-	httpSrv := &http.Server{Addr: cfg.Network.HTTPAddr, Handler: api.New(st, cfg.Cluster.NodeID, clock).Handler()}
+	httpSrv := &http.Server{Addr: cfg.Network.HTTPAddr, Handler: api.New(st, cfg.Cluster.NodeID, clock, api.Options{
+		AdminToken:  cfg.Network.AdminToken,
+		EnablePprof: cfg.Network.EnablePprof,
+	}).Handler()}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

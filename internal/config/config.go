@@ -27,6 +27,8 @@ type Network struct {
 	HTTPAddr      string  `yaml:"http_addr"`
 	SyncAddr      string  `yaml:"sync_addr"`
 	AdvertiseAddr string  `yaml:"advertise_addr"`
+	AdminToken    string  `yaml:"admin_token"`
+	EnablePprof   bool    `yaml:"enable_pprof"`
 	SyncTLS       SyncTLS `yaml:"sync_tls"`
 }
 
@@ -66,6 +68,8 @@ func Default() *Config {
 			HTTPAddr:      "127.0.0.1:8090",
 			SyncAddr:      "127.0.0.1:8100",
 			AdvertiseAddr: "",
+			AdminToken:    "",
+			EnablePprof:   false,
 			SyncTLS:       SyncTLS{},
 		},
 		Storage: Storage{

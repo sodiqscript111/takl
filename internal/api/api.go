@@ -1,30 +1,47 @@
 package api
 
 import (
+	"crypto/subtle"
 	"encoding/json"
+	"fmt"
 	"math/rand"
 	"net/http"
+	"net/http/pprof"
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"takl/internal/engine/store"
+	"takl/internal/metrics"
 	"takl/internal/model"
 )
 
 type Server struct {
-	store  *store.Store
-	nodeID string
-	clock  *model.Clock
+	store       *store.Store
+	nodeID      string
+	clock       *model.Clock
+	adminToken  string
+	enablePprof bool
 }
 
-func New(st *store.Store, nodeID string, clock *model.Clock) *Server {
-	return &Server{store: st, nodeID: nodeID, clock: clock}
+type Options struct {
+	AdminToken  string
+	EnablePprof bool
+}
+
+func New(st *store.Store, nodeID string, clock *model.Clock, opts ...Options) *Server {
+	var opt Options
+	if len(opts) > 0 {
+		opt = opts[0]
+	}
+	return &Server{store: st, nodeID: nodeID, clock: clock, adminToken: opt.AdminToken, enablePprof: opt.EnablePprof}
 }
 
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.handleHealth)
+	mux.HandleFunc("GET /metrics", s.handleMetrics)
 	mux.HandleFunc("GET /api/v1/runners/best", s.handleBestRunner)
 	mux.HandleFunc("GET /api/v1/runners", s.handleRunners)
 	mux.HandleFunc("GET /api/v1/runners/{id}", s.handleRunner)
@@ -34,11 +51,84 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/events", s.handleEvents)
 	mux.HandleFunc("GET /api/v1/summary", s.handleSummary)
 	mux.HandleFunc("GET /api/v1/cluster", s.handleCluster)
-	return mux
+	if s.enablePprof {
+		mux.Handle("GET /debug/pprof/", s.adminOnly(http.HandlerFunc(pprof.Index)))
+		mux.Handle("GET /debug/pprof/cmdline", s.adminOnly(http.HandlerFunc(pprof.Cmdline)))
+		mux.Handle("GET /debug/pprof/profile", s.adminOnly(http.HandlerFunc(pprof.Profile)))
+		mux.Handle("GET /debug/pprof/symbol", s.adminOnly(http.HandlerFunc(pprof.Symbol)))
+		mux.Handle("POST /debug/pprof/symbol", s.adminOnly(http.HandlerFunc(pprof.Symbol)))
+		mux.Handle("GET /debug/pprof/trace", s.adminOnly(http.HandlerFunc(pprof.Trace)))
+	}
+	return s.observeHTTP(mux)
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "node_id": s.nodeID})
+}
+
+func (s *Server) handleMetrics(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
+	fmt.Fprintln(w, "# HELP takl_http_requests_total Total HTTP requests by status code.")
+	fmt.Fprintln(w, "# TYPE takl_http_requests_total counter")
+	metrics.HTTPRequests.Write(w, "takl_http_requests_total")
+	fmt.Fprintln(w, "# HELP takl_placement_requests_total Total placement query requests.")
+	fmt.Fprintln(w, "# TYPE takl_placement_requests_total counter")
+	fmt.Fprintf(w, "takl_placement_requests_total %d\n", metrics.PlacementRequests.Load())
+	fmt.Fprintln(w, "# HELP takl_placement_errors_total Total placement query errors.")
+	fmt.Fprintln(w, "# TYPE takl_placement_errors_total counter")
+	fmt.Fprintf(w, "takl_placement_errors_total %d\n", metrics.PlacementErrors.Load())
+	fmt.Fprintln(w, "# HELP takl_placement_latency_seconds Placement query latency.")
+	fmt.Fprintln(w, "# TYPE takl_placement_latency_seconds summary")
+	fmt.Fprintf(w, "takl_placement_latency_seconds_count %d\n", metrics.PlacementLatency.Count())
+	fmt.Fprintf(w, "takl_placement_latency_seconds_sum %f\n", metrics.PlacementLatency.Seconds())
+	fmt.Fprintln(w, "# HELP takl_sync_rounds_total Total sync rounds.")
+	fmt.Fprintln(w, "# TYPE takl_sync_rounds_total counter")
+	fmt.Fprintf(w, "takl_sync_rounds_total %d\n", metrics.SyncRounds.Load())
+	fmt.Fprintln(w, "# HELP takl_sync_round_errors_total Total failed sync rounds.")
+	fmt.Fprintln(w, "# TYPE takl_sync_round_errors_total counter")
+	fmt.Fprintf(w, "takl_sync_round_errors_total %d\n", metrics.SyncRoundErrors.Load())
+	fmt.Fprintln(w, "# HELP takl_sync_round_latency_seconds Sync round latency.")
+	fmt.Fprintln(w, "# TYPE takl_sync_round_latency_seconds summary")
+	fmt.Fprintf(w, "takl_sync_round_latency_seconds_count %d\n", metrics.SyncRoundLatency.Count())
+	fmt.Fprintf(w, "takl_sync_round_latency_seconds_sum %f\n", metrics.SyncRoundLatency.Seconds())
+	fmt.Fprintln(w, "# HELP takl_sync_rows_applied_total Total replicated rows applied by sync.")
+	fmt.Fprintln(w, "# TYPE takl_sync_rows_applied_total counter")
+	fmt.Fprintf(w, "takl_sync_rows_applied_total %d\n", metrics.SyncRowsApplied.Load())
+	fmt.Fprintln(w, "# HELP takl_sync_events_applied_total Total replicated events applied by sync.")
+	fmt.Fprintln(w, "# TYPE takl_sync_events_applied_total counter")
+	fmt.Fprintf(w, "takl_sync_events_applied_total %d\n", metrics.SyncEventsApplied.Load())
+	fmt.Fprintln(w, "# HELP takl_sync_checksum_mismatches_total Total row checksum mismatches requiring reconciliation.")
+	fmt.Fprintln(w, "# TYPE takl_sync_checksum_mismatches_total counter")
+	fmt.Fprintf(w, "takl_sync_checksum_mismatches_total %d\n", metrics.SyncChecksumMismatches.Load())
+	fmt.Fprintln(w, "# HELP takl_sync_event_checksum_mismatches_total Total event checksum mismatches requiring reconciliation.")
+	fmt.Fprintln(w, "# TYPE takl_sync_event_checksum_mismatches_total counter")
+	fmt.Fprintf(w, "takl_sync_event_checksum_mismatches_total %d\n", metrics.SyncEventChecksumMismatches.Load())
+
+	runners, err := listRunners(s.store, -1, 0)
+	if err != nil {
+		fmt.Fprintf(w, "takl_metrics_store_error 1\n")
+		return
+	}
+	var active, capacity, available int
+	for _, r := range runners {
+		if r.Status == model.RunnerActive {
+			active++
+			capacity += r.WorkerCapacity
+			available += r.AvailableWorkers
+		}
+	}
+	fmt.Fprintln(w, "# HELP takl_runners_total Total known non-tombstoned runners.")
+	fmt.Fprintln(w, "# TYPE takl_runners_total gauge")
+	fmt.Fprintf(w, "takl_runners_total %d\n", len(runners))
+	fmt.Fprintln(w, "# HELP takl_active_runners Total active runners.")
+	fmt.Fprintln(w, "# TYPE takl_active_runners gauge")
+	fmt.Fprintf(w, "takl_active_runners %d\n", active)
+	fmt.Fprintln(w, "# HELP takl_worker_capacity Total active worker capacity.")
+	fmt.Fprintln(w, "# TYPE takl_worker_capacity gauge")
+	fmt.Fprintf(w, "takl_worker_capacity %d\n", capacity)
+	fmt.Fprintln(w, "# HELP takl_available_workers Total active available workers.")
+	fmt.Fprintln(w, "# TYPE takl_available_workers gauge")
+	fmt.Fprintf(w, "takl_available_workers %d\n", available)
 }
 
 func parsePagination(r *http.Request) (int, int) {
@@ -284,8 +374,15 @@ func scoreRunner(r model.Runner) float64 {
 }
 
 func (s *Server) handleBestRunner(w http.ResponseWriter, r *http.Request) {
+	start := time.Now()
+	metrics.PlacementRequests.Inc()
+	defer func() {
+		metrics.PlacementLatency.Observe(time.Since(start))
+	}()
+
 	runners, err := listRunners(s.store, -1, 0)
 	if err != nil {
+		metrics.PlacementErrors.Inc()
 		writeError(w, err)
 		return
 	}
@@ -336,6 +433,7 @@ func (s *Server) handleBestRunner(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if len(finalEligible) == 0 {
+		metrics.PlacementErrors.Inc()
 		writeJSON(w, http.StatusNotFound, map[string]any{"error": "no available runners"})
 		return
 	}
@@ -404,4 +502,53 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 
 func writeError(w http.ResponseWriter, err error) {
 	writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
+}
+
+type statusRecorder struct {
+	http.ResponseWriter
+	status int
+}
+
+func (r *statusRecorder) WriteHeader(status int) {
+	r.status = status
+	r.ResponseWriter.WriteHeader(status)
+}
+
+func (r *statusRecorder) Write(b []byte) (int, error) {
+	if r.status == 0 {
+		r.status = http.StatusOK
+	}
+	return r.ResponseWriter.Write(b)
+}
+
+func (s *Server) observeHTTP(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rec := &statusRecorder{ResponseWriter: w}
+		next.ServeHTTP(rec, r)
+		if rec.status == 0 {
+			rec.status = http.StatusOK
+		}
+		metrics.HTTPRequests.Inc(rec.status)
+	})
+}
+
+func (s *Server) adminOnly(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !s.authorized(r) {
+			writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "admin token required"})
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func (s *Server) authorized(r *http.Request) bool {
+	if s.adminToken == "" {
+		return false
+	}
+	got := r.Header.Get("X-Takl-Admin-Token")
+	if got == "" {
+		got = strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+	}
+	return subtle.ConstantTimeCompare([]byte(got), []byte(s.adminToken)) == 1
 }

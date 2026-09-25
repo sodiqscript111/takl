@@ -179,4 +179,56 @@ func TestLabelsCRUD(t *testing.T) {
 	}
 }
 
+func TestMetricsEndpoint(t *testing.T) {
+	st := openTestStore(t)
+	putRunner(t, st, model.Runner{
+		RunnerID:         "runner-m",
+		Status:           model.RunnerActive,
+		WorkerCapacity:   8,
+		AvailableWorkers: 6,
+	})
 
+	srv := New(st, "test-node", model.NewClock(nil))
+	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	body := rec.Body.String()
+	for _, want := range []string{
+		"takl_placement_requests_total",
+		"takl_sync_rounds_total",
+		"takl_active_runners 1",
+		"takl_worker_capacity 8",
+		"takl_available_workers 6",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("metrics output missing %q:\n%s", want, body)
+		}
+	}
+}
+
+func TestPprofRequiresAdminToken(t *testing.T) {
+	st := openTestStore(t)
+	srv := New(st, "test-node", model.NewClock(nil), Options{
+		AdminToken:  "secret",
+		EnablePprof: true,
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/debug/pprof/cmdline", nil)
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d", rec.Code)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/debug/pprof/cmdline", nil)
+	req.Header.Set("X-Takl-Admin-Token", "secret")
+	rec = httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+}

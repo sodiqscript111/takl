@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"takl/internal/engine/store"
+	"takl/internal/metrics"
 	"takl/internal/model"
 	"takl/internal/transport"
 )
@@ -59,6 +60,12 @@ func (e *Engine) gcTombstones() {
 }
 
 func (e *Engine) roundAll(ctx context.Context) error {
+	start := time.Now()
+	metrics.SyncRounds.Inc()
+	defer func() {
+		metrics.SyncRoundLatency.Observe(time.Since(start))
+	}()
+
 	peers := e.peerProvider()
 	if len(peers) == 0 {
 		return nil
@@ -83,6 +90,9 @@ func (e *Engine) roundAll(ctx context.Context) error {
 		if err := <-errCh; err != nil && firstErr == nil {
 			firstErr = err
 		}
+	}
+	if firstErr != nil {
+		metrics.SyncRoundErrors.Inc()
 	}
 	return firstErr
 }
@@ -138,6 +148,7 @@ func (e *Engine) RoundOnce(ctx context.Context, peer string) error {
 		if err := e.st.ApplyRemote(peer, rows); err != nil {
 			return err
 		}
+		metrics.SyncRowsApplied.Add(uint64(len(rows)))
 		e.clock.Update(maxHLC)
 	}
 
@@ -167,6 +178,7 @@ func (e *Engine) RoundOnce(ctx context.Context, peer string) error {
 		if err := e.st.ApplyEvents(incoming); err != nil {
 			return err
 		}
+		metrics.SyncEventsApplied.Add(uint64(len(incoming)))
 		if err := e.st.SetWatermark(peer, store.KindEvent, evWm); err != nil {
 			return err
 		}

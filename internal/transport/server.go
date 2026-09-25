@@ -7,6 +7,7 @@ import (
 	"google.golang.org/grpc"
 
 	"takl/internal/engine/store"
+	"takl/internal/metrics"
 	"takl/internal/model"
 	"takl/internal/transport/pb"
 )
@@ -52,6 +53,7 @@ func (s *Server) Pull(_ context.Context, req *pb.PullRequest) (*pb.PullResponse,
 		}
 
 		if len(rows) == 0 && reqChk != 0 && reqChk != chk {
+			metrics.SyncChecksumMismatches.Inc()
 			wm = model.HLC{}
 			rows, err = s.store.ChangesSince(kind, wm)
 			if err != nil {
@@ -86,6 +88,7 @@ func (s *Server) Pull(_ context.Context, req *pb.PullRequest) (*pb.PullResponse,
 		return nil, err
 	}
 	if len(evs) == 0 && req.EventChecksum != 0 && req.EventChecksum != evChk {
+		metrics.SyncEventChecksumMismatches.Inc()
 		evWm = model.HLC{}
 		evs, err = s.store.EventsSince(evWm)
 		if err != nil {

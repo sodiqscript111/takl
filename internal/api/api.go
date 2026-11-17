@@ -237,28 +237,18 @@ func (s *Server) handleUpdateLabels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Merge with existing API labels
+	// Merge with existing API labels. The merge runs inside PutLocal's
+	// transaction, so it reads exactly the row the new one replaces.
 	existing := make(map[string]string)
-	metaRow, ok, err := s.store.Get(store.KindMeta, id)
-	if err != nil {
-		writeError(w, err)
-		return
-	}
-	if ok && !metaRow.Tombstone {
-		_ = json.Unmarshal(metaRow.Payload, &existing)
-	}
-	for k, v := range incoming {
-		existing[k] = v
-	}
-
-	payload, _ := json.Marshal(existing)
-	hlc := s.clock.Tick()
-	err = s.store.Put(store.Row{
-		Kind:    store.KindMeta,
-		Key:     id,
-		Owner:   "api/" + s.nodeID,
-		HLC:     hlc,
-		Payload: payload,
+	_, err = s.store.PutLocal(store.KindMeta, id, "api/"+s.nodeID, s.clock, func(cur store.Row, ok bool) ([]byte, bool, error) {
+		if ok && !cur.Tombstone {
+			_ = json.Unmarshal(cur.Payload, &existing)
+		}
+		for k, v := range incoming {
+			existing[k] = v
+		}
+		payload, err := json.Marshal(existing)
+		return payload, false, err
 	})
 	if err != nil {
 		writeError(w, err)
@@ -270,8 +260,10 @@ func (s *Server) handleUpdateLabels(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleDeleteLabels(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	hlc := s.clock.Tick()
-	if err := s.store.Delete(store.KindMeta, id, "api/"+s.nodeID, hlc); err != nil {
+	_, err := s.store.PutLocal(store.KindMeta, id, "api/"+s.nodeID, s.clock, func(cur store.Row, _ bool) ([]byte, bool, error) {
+		return cur.Payload, true, nil
+	})
+	if err != nil {
 		writeError(w, err)
 		return
 	}

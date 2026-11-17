@@ -49,10 +49,10 @@ func (a *Agent) owner() string {
 }
 
 func (a *Agent) Start() error {
-	hlc := a.clock.Tick()
 	runner := a.backend.Snapshot()
 	runner.Status = model.RunnerActive
-	if err := a.putRow(store.KindRunner, runner.Key(), runner, hlc); err != nil {
+	hlc, err := a.putRow(store.KindRunner, runner.Key(), runner)
+	if err != nil {
 		return err
 	}
 	return a.emit(model.EventRunnerJoined, nil, hlc)
@@ -60,7 +60,6 @@ func (a *Agent) Start() error {
 
 func (a *Agent) Step() error {
 	a.backend.Step()
-	hlc := a.clock.Tick()
 	runner := a.backend.Snapshot()
 
 	isHot := runner.CPUUtil >= 0.90 || runner.MemUtil >= 0.90 || runner.FreeDiskMB < 2000
@@ -84,7 +83,8 @@ func (a *Agent) Step() error {
 		runner.Status = model.RunnerActive
 	}
 
-	return a.putRow(store.KindRunner, runner.Key(), runner, hlc)
+	_, err := a.putRow(store.KindRunner, runner.Key(), runner)
+	return err
 }
 
 func (a *Agent) Run(ctx context.Context, interval time.Duration) error {
@@ -114,16 +114,20 @@ func (a *Agent) handleMembershipEvents(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case ev := <-a.cluster.Events():
-			hlc := a.clock.Tick()
+			var hlc model.HLC
 			var eventType model.EventType
 			switch ev.Type {
 			case membership.EventJoin:
 				eventType = model.EventRunnerJoined
+				hlc = a.clock.Tick()
 			case membership.EventLeave:
 				eventType = model.EventRunnerLeft
-				if err := a.store.DeleteByNode(ev.NodeID, hlc); err != nil {
+				h, err := a.store.DeleteByNode(ev.NodeID, a.clock)
+				if err != nil {
 					slog.Error("prune dead node", "node", ev.NodeID, "err", err)
+					h = a.clock.Tick()
 				}
+				hlc = h
 			case membership.EventUpdate:
 				continue
 			default:
@@ -138,12 +142,15 @@ func (a *Agent) handleMembershipEvents(ctx context.Context) {
 	}
 }
 
-func (a *Agent) putRow(kind store.Kind, key string, v any, hlc model.HLC) error {
+func (a *Agent) putRow(kind store.Kind, key string, v any) (model.HLC, error) {
 	payload, err := model.Encode(v)
 	if err != nil {
-		return err
+		return model.HLC{}, err
 	}
-	return a.store.Put(store.Row{Kind: kind, Key: key, Owner: a.owner(), HLC: hlc, Payload: payload})
+	r, err := a.store.PutLocal(kind, key, a.owner(), a.clock, func(store.Row, bool) ([]byte, bool, error) {
+		return payload, false, nil
+	})
+	return r.HLC, err
 }
 
 func (a *Agent) emit(t model.EventType, payload map[string]any, hlc model.HLC) error {

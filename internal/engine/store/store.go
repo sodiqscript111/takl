@@ -160,8 +160,48 @@ const upsertRowSQL = `INSERT INTO rows (kind, key, owner, hlc_ts, hlc_seq, tombs
 		tombstone = excluded.tombstone,
 		payload = excluded.payload`
 
+// Put is a raw upsert with no conflict check. Production writers use PutLocal
+// (local changes) or ApplyRemote (replicated changes); Put is for seeding.
 func (s *Store) Put(r Row) error {
 	return s.upsert(r)
+}
+
+// PutLocal writes a row that originates on this node (agent ticks, label API).
+//
+// build gets the current row (ok is false if there is none) and returns the
+// new payload and tombstone flag. The HLC is taken inside the same transaction
+// that reads the current row: the row's HLC is folded into clock first, then
+// clock ticks. The store has a single connection, so no ApplyRemote can commit
+// between the read and the write, and the new row always supersedes the one it
+// replaces, even when the sync engine has applied a remote row but not yet
+// called clock.Update for it.
+func (s *Store) PutLocal(kind Kind, key, owner string, clock *model.Clock, build func(cur Row, ok bool) (payload []byte, tombstone bool, err error)) (Row, error) {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return Row{}, err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	cur, err := scanRow(tx.QueryRow(`SELECT kind, key, owner, hlc_ts, hlc_seq, tombstone, payload FROM rows WHERE kind = ? AND key = ?`, kind, key))
+	ok := err == nil
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return Row{}, err
+	}
+	payload, tomb, err := build(cur, ok)
+	if err != nil {
+		return Row{}, err
+	}
+	if payload == nil {
+		payload = []byte{}
+	}
+	if ok {
+		clock.Update(cur.HLC)
+	}
+	r := Row{Kind: kind, Key: key, Owner: owner, HLC: clock.Tick(), Tombstone: tomb, Payload: payload}
+	if _, err := tx.Exec(upsertRowSQL, r.Kind, r.Key, r.Owner, r.HLC.TS, r.HLC.Seq, b2i(r.Tombstone), r.Payload); err != nil {
+		return Row{}, err
+	}
+	return r, tx.Commit()
 }
 
 func (s *Store) Apply(r Row) error {
@@ -294,14 +334,37 @@ func (s *Store) Delete(kind Kind, key, owner string, hlc model.HLC) error {
 	return s.upsert(Row{Kind: kind, Key: key, Owner: owner, HLC: hlc, Tombstone: true, Payload: payload})
 }
 
-func (s *Store) DeleteByNode(nodeID string, hlc model.HLC) error {
+// DeleteByNode tombstones every live row owned by nodeID. Like PutLocal, it
+// folds the newest of those rows' HLCs into clock before ticking, inside one
+// transaction, so each tombstone supersedes the row it replaces. It returns the
+// HLC it used.
+func (s *Store) DeleteByNode(nodeID string, clock *model.Clock) (model.HLC, error) {
 	prefix := nodeID + "/%"
-	_, err := s.db.Exec(`UPDATE rows SET 
-		tombstone = 1, 
-		hlc_ts = ?, 
-		hlc_seq = ? 
-		WHERE owner LIKE ? AND tombstone = 0`, hlc.TS, hlc.Seq, prefix)
-	return err
+	tx, err := s.db.Begin()
+	if err != nil {
+		return model.HLC{}, err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var newest model.HLC
+	err = tx.QueryRow(`SELECT hlc_ts, hlc_seq FROM rows
+		WHERE owner LIKE ? AND tombstone = 0
+		ORDER BY hlc_ts DESC, hlc_seq DESC LIMIT 1`, prefix).Scan(&newest.TS, &newest.Seq)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return model.HLC{}, err
+	}
+	if err == nil {
+		clock.Update(newest)
+	}
+	hlc := clock.Tick()
+	if _, err := tx.Exec(`UPDATE rows SET
+		tombstone = 1,
+		hlc_ts = ?,
+		hlc_seq = ?
+		WHERE owner LIKE ? AND tombstone = 0`, hlc.TS, hlc.Seq, prefix); err != nil {
+		return model.HLC{}, err
+	}
+	return hlc, tx.Commit()
 }
 
 func (s *Store) GCTombstones(minHLC model.HLC) (int64, error) {

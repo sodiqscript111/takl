@@ -61,7 +61,7 @@ func TestPullReturnsAllRows(t *testing.T) {
 	seedRow(t, st, store.KindMeta, "m9", "a", 4, true)
 
 	client := startBufconn(t, "a", st)
-	resp, err := client.Pull(context.Background(), &pb.PullRequest{Watermarks: map[string]*pb.HLC{}})
+	resp, err := client.Pull(context.Background(), &pb.PullRequest{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -85,18 +85,76 @@ func TestPullRespectsWatermark(t *testing.T) {
 	t.Cleanup(func() { st.Close() })
 	seedRow(t, st, store.KindMeta, "m1", "a", 10, false)
 	seedRow(t, st, store.KindMeta, "m2", "a", 20, false)
-	seedRow(t, st, store.KindMeta, "m3", "a", 30, true)
+	since, _ := st.Version()
+	// m3 has an older HLC than m2 but changed later: it must still be sent.
+	seedRow(t, st, store.KindMeta, "m3", "a", 5, true)
+	id, _ := st.StoreID()
 
 	client := startBufconn(t, "a", st)
-	wm := map[string]*pb.HLC{"meta": {Ts: 20}}
-	resp, err := client.Pull(context.Background(), &pb.PullRequest{Watermarks: wm})
+	resp, err := client.Pull(context.Background(), &pb.PullRequest{StoreId: "req", PeerStoreId: id, SinceVersion: since})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(resp.Rows) != 1 {
-		t.Fatalf("want only rows after watermark, got %d", len(resp.Rows))
+	if len(resp.Rows) != 1 || resp.Rows[0].Key != "m3" {
+		t.Fatalf("want only m3 after the watermark, got %+v", resp.Rows)
 	}
-	if resp.Rows[0].Key != "m3" {
-		t.Fatalf("wrong row: %+v", resp.Rows[0])
+	if resp.StoreId != id || resp.Version != since+1 {
+		t.Fatalf("response store/version = %q/%d, want %q/%d", resp.StoreId, resp.Version, id, since+1)
+	}
+
+	// A watermark taken against another store id means nothing: send everything.
+	resp, err = client.Pull(context.Background(), &pb.PullRequest{StoreId: "req", PeerStoreId: "old-id", SinceVersion: since})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(resp.Rows) != 3 {
+		t.Fatalf("stale store id should get every row, got %d", len(resp.Rows))
+	}
+}
+
+func TestPullForgottenRequesterIsToldToWipe(t *testing.T) {
+	st, err := store.Open(":memory:", "a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { st.Close() })
+	seedRow(t, st, store.KindMeta, "m1", "a", 10, false)
+	client := startBufconn(t, "a", st)
+	ctx := context.Background()
+
+	if _, err := client.Pull(ctx, &pb.PullRequest{StoreId: "req"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.ForgetPeers(1 << 62); err != nil {
+		t.Fatal(err)
+	}
+	resp, err := client.Pull(ctx, &pb.PullRequest{StoreId: "req"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !resp.Forgotten || len(resp.Rows) != 0 {
+		t.Fatalf("forgotten requester got forgotten=%v rows=%d", resp.Forgotten, len(resp.Rows))
+	}
+}
+
+func TestPullFromForgettingPeerWipesServer(t *testing.T) {
+	st, err := store.Open(":memory:", "a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { st.Close() })
+	seedRow(t, st, store.KindMeta, "m1", "b", 10, false) // someone else's row
+	oldID, _ := st.StoreID()
+	client := startBufconn(t, "a", st)
+
+	resp, err := client.Pull(context.Background(), &pb.PullRequest{StoreId: "req", PeerStoreId: oldID, SinceVersion: 7, Forgotten: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StoreId == oldID {
+		t.Fatal("server did not take a new store id after being told it was forgotten")
+	}
+	if len(resp.Rows) != 0 {
+		t.Fatalf("wiped server still served other nodes' rows: %+v", resp.Rows)
 	}
 }

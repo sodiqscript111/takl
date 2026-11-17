@@ -11,7 +11,6 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/keepalive"
 
-	"takl/internal/model"
 	"takl/internal/transport/pb"
 )
 
@@ -59,19 +58,11 @@ func (c *Client) conn(addr string) (*grpc.ClientConn, error) {
 	return cc, nil
 }
 
-func (c *Client) Pull(ctx context.Context, addr string, watermarks map[string]model.HLC, checksums map[string]uint64, eventWm model.HLC, eventChk uint64) (*pb.PullResponse, error) {
+// Pull sends one pull request to the sync server at addr.
+func (c *Client) Pull(ctx context.Context, addr string, req *pb.PullRequest) (*pb.PullResponse, error) {
 	cc, err := c.conn(addr)
 	if err != nil {
 		return nil, err
-	}
-	req := &pb.PullRequest{
-		Watermarks:     make(map[string]*pb.HLC, len(watermarks)),
-		Checksums:      checksums,
-		EventWatermark: &pb.HLC{Ts: eventWm.TS, Seq: eventWm.Seq},
-		EventChecksum:  eventChk,
-	}
-	for kind, h := range watermarks {
-		req.Watermarks[kind] = &pb.HLC{Ts: h.TS, Seq: h.Seq}
 	}
 	ctx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()

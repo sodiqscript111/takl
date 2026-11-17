@@ -34,6 +34,7 @@ Everything in Takl (Node state, Custom metadata/labels) is stored as a generic r
 - `hlc_ts` / `hlc_seq`: The Hybrid Logical Clock timestamp.
 - `tombstone`: A boolean flag indicating deletion.
 - `payload`: A JSON blob of the actual data.
+- `ver`: This node's local version for the row's last change (replication bookkeeping, never replicated).
 
 ### Conflict Resolution (Last-Write-Wins)
 When two nodes have different versions of the same row, Takl uses **LWW (Last-Write-Wins)** based on the Hybrid Logical Clock (HLC).
@@ -41,7 +42,7 @@ When two nodes have different versions of the same row, Takl uses **LWW (Last-Wr
 2. If timestamps are exactly equal, the row with the lexicographically higher `owner` ID wins.
 
 ### Deletions (Tombstones)
-Rows are never immediately deleted. Instead, their `tombstone` flag is set to `1`. This allows the deletion event to replicate to other nodes. A Garbage Collection (GC) routine permanently purges tombstones older than 1 hour.
+Rows are never immediately deleted. Instead, their `tombstone` flag is set to `1`. This allows the deletion event to replicate to other nodes. A tombstone is only purged once it is older than 1 hour **and** every known peer has pulled it (see *Tombstone GC* below). Purging it earlier would let a peer that never saw the delete send the old row back.
 
 *Location: `internal/engine/store`*
 
@@ -49,15 +50,28 @@ Rows are never immediately deleted. Instead, their `tombstone` flag is set to `1
 
 State replication is **pull-based** over gRPC. Every 2 seconds (configurable), a node asks a random subset of its peers for updates.
 
-### Watermarks
-To avoid pulling the entire database every 2 seconds, nodes track **Watermarks**. If Node A pulled from Node B up to HLC time `100`, Node A saves `100` as the watermark. Next time, it only asks Node B for changes *after* `100`.
+### Versions and watermarks
+Every change to a node's store (a local write, or a row or event it accepts from a peer) gets the node's next **local version**. Each store also has a random **store id**.
 
-### Checksum Divergence (Anti-Entropy)
-If a node goes offline, misses a tombstone GC window, and comes back, watermarks alone might miss data. Takl uses a fast Merkle-like checksum:
-1. Node A requests a pull and sends a 64-bit XOR checksum of all its keys.
-2. Node B compares it to its own checksum.
-3. If the checksums match, everything is perfectly in sync.
-4. If they mismatch, Node B ignores the watermark and sends a full state reconciliation.
+If Node A has pulled Node B's store up to version `100`, A saves `100` as its watermark for B's store id. Next time it asks only for changes with version > `100`, and B answers with them plus its current version, which becomes A's new watermark.
+
+Watermarks used to be HLC timestamps. That lost data: B can receive a row with an *old* HLC from a third node after A's watermark has already moved past it, so A never got it. With local versions, the late row gets a new version on B and is pulled like any other change.
+
+A watermark only counts for the store id it was taken against. If B's database is wiped or recreated it gets a new store id, and A pulls it from version 0.
+
+### Tombstone GC
+When B serves a pull, it records the requester's watermark as an **ack**: that peer has everything of B's up to that version. B drops a tombstone only when it is past the grace period (1h) and every peer B knows (pulled from or been pulled by) has acked past it.
+
+A peer that has been unreachable for 24h is **forgotten**: it stops blocking GC. To make sure a forgotten node cannot bring deleted rows back, peers that forgot it refuse to sync with it until it wipes:
+- if it pulls from them, they answer "forgotten" and it wipes;
+- if they pull from it, they tell it it was forgotten and it wipes before answering.
+
+Wiping drops every row except the node's own writes that it never sent to anyone, then takes a new store id. Everything else re-replicates from peers.
+
+A node only starts forgetting peers after it has itself been running for 24h, so restarting after its own downtime never makes it forget, and force-wipe, healthy peers.
+
+### Model checking
+The protocol was checked with TLA+/TLC: the old protocol had counterexamples for lost relayed rows (permanent divergence), tombstone resurrection and a clock race on local writes. For the current one, on bounded 3-node models: the convergence check passes a full search, and the resurrection check found no violation in 23.8M states (that search was not exhaustive).
 
 *Location: `internal/engine/sync` and `internal/transport`*
 

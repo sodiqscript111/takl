@@ -3,12 +3,13 @@ package transport
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
+	"time"
 
 	"google.golang.org/grpc"
 
 	"takl/internal/engine/store"
 	"takl/internal/metrics"
-	"takl/internal/model"
 	"takl/internal/transport/pb"
 )
 
@@ -27,75 +28,45 @@ func (s *Server) RegisterWith(gs *grpc.Server) {
 }
 
 func (s *Server) Pull(_ context.Context, req *pb.PullRequest) (*pb.PullResponse, error) {
-	resp := &pb.PullResponse{
-		NodeId:    s.nodeID,
-		Checksums: make(map[string]uint64),
-	}
-	for _, kind := range store.Kinds {
-		wm := model.HLC{}
-		if h := req.Watermarks[string(kind)]; h != nil {
-			wm = model.HLC{TS: h.Ts, Seq: h.Seq}
-		}
-		chk, err := s.store.Checksum(kind)
+	if req.Forgotten && req.PeerStoreId != "" {
+		id, err := s.store.StoreID()
 		if err != nil {
 			return nil, err
 		}
-		resp.Checksums[string(kind)] = chk
-
-		var reqChk uint64
-		if req.Checksums != nil {
-			reqChk = req.Checksums[string(kind)]
-		}
-
-		rows, err := s.store.ChangesSince(kind, wm)
-		if err != nil {
-			return nil, err
-		}
-
-		if len(rows) == 0 && reqChk != 0 && reqChk != chk {
-			metrics.SyncChecksumMismatches.Inc()
-			wm = model.HLC{}
-			rows, err = s.store.ChangesSince(kind, wm)
-			if err != nil {
+		if req.PeerStoreId == id {
+			if err := Wipe(s.store, "peer "+req.NodeId+" has forgotten this store"); err != nil {
 				return nil, err
 			}
 		}
-
-		for _, r := range rows {
-			resp.Rows = append(resp.Rows, &pb.Row{
-				Kind:      string(r.Kind),
-				Key:       r.Key,
-				Owner:     r.Owner,
-				Hlc:       &pb.HLC{Ts: r.HLC.TS, Seq: r.HLC.Seq},
-				Tombstone: r.Tombstone,
-				Payload:   r.Payload,
-			})
-		}
 	}
 
-	evWm := model.HLC{}
-	if req.EventWatermark != nil {
-		evWm = model.HLC{TS: req.EventWatermark.Ts, Seq: req.EventWatermark.Seq}
-	}
-	evChk, err := s.store.ChecksumEvents()
+	res, err := s.store.Serve(store.ServeRequest{
+		StoreID:     req.StoreId,
+		NodeID:      req.NodeId,
+		PeerStoreID: req.PeerStoreId,
+		Since:       req.SinceVersion,
+		NowMs:       time.Now().UnixMilli(),
+	})
 	if err != nil {
 		return nil, err
 	}
-	resp.EventChecksum = evChk
-
-	evs, err := s.store.EventsSince(evWm)
-	if err != nil {
-		return nil, err
+	resp := &pb.PullResponse{
+		NodeId:    s.nodeID,
+		StoreId:   res.StoreID,
+		Version:   res.Version,
+		Forgotten: res.Forgotten,
 	}
-	if len(evs) == 0 && req.EventChecksum != 0 && req.EventChecksum != evChk {
-		metrics.SyncEventChecksumMismatches.Inc()
-		evWm = model.HLC{}
-		evs, err = s.store.EventsSince(evWm)
-		if err != nil {
-			return nil, err
-		}
+	for _, r := range res.Rows {
+		resp.Rows = append(resp.Rows, &pb.Row{
+			Kind:      string(r.Kind),
+			Key:       r.Key,
+			Owner:     r.Owner,
+			Hlc:       &pb.HLC{Ts: r.HLC.TS, Seq: r.HLC.Seq},
+			Tombstone: r.Tombstone,
+			Payload:   r.Payload,
+		})
 	}
-	for _, e := range evs {
+	for _, e := range res.Events {
 		pl, _ := json.Marshal(e.Payload)
 		resp.Events = append(resp.Events, &pb.Event{
 			RunnerId: e.RunnerID,
@@ -103,8 +74,20 @@ func (s *Server) Pull(_ context.Context, req *pb.PullRequest) (*pb.PullResponse,
 			Type:     string(e.Type),
 			Payload:  string(pl),
 			Hlc:      &pb.HLC{Ts: e.HLC.TS, Seq: e.HLC.Seq},
+			Origin:   e.Origin,
 		})
 	}
-
 	return resp, nil
+}
+
+// Wipe wipes st after a peer reported it has forgotten this store, and logs it.
+func Wipe(st *store.Store, reason string) error {
+	id, kept, err := st.Wipe()
+	if err != nil {
+		return err
+	}
+	metrics.SyncWipes.Inc()
+	slog.Warn("store wiped: a peer forgot this node, resyncing from scratch",
+		"reason", reason, "new_store_id", id, "own_unsent_rows_kept", kept)
+	return nil
 }

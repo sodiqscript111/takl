@@ -20,10 +20,19 @@ message Row {
 
 message PullRequest {
   string node_id = 1;
-  map<string, HLC> watermarks = 2;
-  map<string, uint64> checksums = 3;
-  HLC event_watermark = 4;
-  uint64 event_checksum = 5;
+  // 2-5 were per-kind HLC watermarks and checksums (removed: HLC watermarks
+  // skip rows that reach a node late through a relay).
+  reserved 2, 3, 4, 5;
+  // The requester's own store id.
+  string store_id = 6;
+  // The server store that since_version refers to. If it is not the server's
+  // current store id, the server sends everything.
+  string peer_store_id = 7;
+  // Highest server-local version the requester has already pulled.
+  uint64 since_version = 8;
+  // The requester has forgotten peer_store_id: the server must wipe its store
+  // before it is synced with again.
+  bool forgotten = 9;
 }
 
 message Event {
@@ -32,14 +41,21 @@ message Event {
   string type = 3;
   string payload = 4;
   HLC hlc = 5;
+  // Store id of the node that emitted the event; (origin, runner_id, seq) is unique.
+  string origin = 6;
 }
 
 message PullResponse {
   string node_id = 1;
   repeated Row rows = 2;
-  map<string, uint64> checksums = 3;
+  reserved 3, 5;
   repeated Event events = 4;
-  uint64 event_checksum = 5;
+  string store_id = 6;
+  // The server's current version: every change up to it is in this response,
+  // so it is the requester's new watermark.
+  uint64 version = 7;
+  // The server has forgotten the requester's store: the requester must wipe.
+  bool forgotten = 8;
 }
 
 service SyncService {

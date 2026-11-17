@@ -71,15 +71,16 @@ func (s *StatusCounters) Write(w io.Writer, name string) {
 }
 
 var (
-	HTTPRequests                StatusCounters
-	PlacementRequests           Counter
-	PlacementErrors             Counter
-	PlacementLatency            Timer
-	SyncRounds                  Counter
-	SyncRoundErrors             Counter
-	SyncRoundLatency            Timer
-	SyncRowsApplied             Counter
-	SyncEventsApplied           Counter
-	SyncChecksumMismatches      Counter
-	SyncEventChecksumMismatches Counter
+	HTTPRequests            StatusCounters
+	PlacementRequests       Counter
+	PlacementErrors         Counter
+	PlacementLatency        Timer
+	SyncRounds              Counter
+	SyncRoundErrors         Counter
+	SyncRoundLatency        Timer
+	SyncRowsApplied         Counter
+	SyncEventsApplied       Counter
+	SyncWipes               Counter
+	SyncPeersForgotten      Counter
+	SyncTombstonesCollected Counter
 )

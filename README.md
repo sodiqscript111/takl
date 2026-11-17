@@ -50,7 +50,7 @@ One takld process per node, composed of:
 | `takld` | `cmd/takld` | The daemon; runs all subsystems on every node |
 | `taklctl` | `cmd/taklctl` | CLI client for the HTTP API (`runners`, `events`, ...) |
 | Agent | `internal/agent` | Samples system metrics each tick, classifies pressure, writes state to the store |
-| Store | `internal/engine/store` | SQLite-backed key-value store with per-kind rows, tombstones, checksums, and per-peer watermarks |
+| Store | `internal/engine/store` | SQLite-backed key-value store with per-kind rows, tombstones, local change versions, and per-peer watermarks and acks |
 | Sync engine | `internal/engine/sync` | Periodic pull-replication rounds against every known peer |
 | Transport | `internal/transport` | gRPC sync protocol (`proto/v1/sync.proto`) |
 | Membership | `internal/membership` | SWIM gossip via HashiCorp `memberlist`; peers advertise their gRPC sync address in node metadata |
@@ -60,9 +60,9 @@ One takld process per node, composed of:
 ### Consistency model
 
 - Every state row carries a **hybrid logical clock (HLC)** so events can be totally ordered across nodes without wall-clock coordination.
-- Each node keeps a **watermark per peer** (per row kind), so sync rounds only fetch changes newer than the last exchange — replication is incremental.
-- Deletes are **tombstones**; tombstones older than one hour are garbage-collected during sync rounds.
-- **Checksums** per kind let peers detect divergence cheaply; incoming rows are applied with HLC-based conflict resolution (highest HLC wins).
+- Every change to a node's store gets a **local version**. Each node keeps a **watermark per peer store** (the peer's version it has pulled up to), so sync rounds only fetch what changed since the last exchange, including rows that reached the peer late through a relay.
+- Incoming rows are applied with HLC-based conflict resolution (highest HLC wins, ties broken by owner).
+- Deletes are **tombstones**. A tombstone is garbage-collected only when it is older than one hour **and** every known peer has pulled it. Peers unreachable for 24h are forgotten and must wipe their store before syncing again, so they cannot bring deleted rows back.
 
 ### Scoring
 

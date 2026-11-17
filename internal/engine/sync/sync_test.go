@@ -90,7 +90,7 @@ func (n *node) engine(peers []string) *Engine {
 func storeSets(st *store.Store) map[store.Kind]map[string]string {
 	out := map[store.Kind]map[string]string{}
 	for _, k := range store.Kinds {
-		rows, err := st.ChangesSince(k, model.HLC{})
+		rows, err := st.ChangesSince(k, 0)
 		if err != nil {
 			panic(err)
 		}
@@ -305,4 +305,168 @@ func TestRandomizedConvergence(t *testing.T) {
 		}
 	}
 	t.Fatalf("failed to converge in random chaos")
+}
+
+func metaRow(t *testing.T, st *store.Store, key string) (store.Row, bool) {
+	t.Helper()
+	r, ok, err := st.Get(store.KindMeta, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return r, ok
+}
+
+func putLabel(t *testing.T, st *store.Store, clock *model.Clock, key, owner, val string) {
+	t.Helper()
+	if _, err := st.PutLocal(store.KindMeta, key, owner, clock, func(store.Row, bool) ([]byte, bool, error) {
+		return []byte(val), false, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// The model-checker counterexample against the old HLC-watermark protocol:
+// a and b write the same key in the same millisecond, c pulls a, a then takes
+// b's version (higher owner wins the tie), b dies. c must still get b's version
+// from a, although its HLC is not newer than what c already pulled from a.
+func TestRelayedRowReachesNodeAfterOriginDies(t *testing.T) {
+	ctx := context.Background()
+	frozen := func() int64 { return 1_000_000 }
+	a := newNode(t, "a", 1, model.NewClock(frozen))
+	b := newNode(t, "b", 2, model.NewClock(frozen))
+	c := newNode(t, "c", 3, nil)
+
+	putLabel(t, a.st, a.clock, "k", "api/a", "from-a")
+	putLabel(t, b.st, b.clock, "k", "api/b", "from-b")
+	ra, _ := metaRow(t, a.st, "k")
+	rb, _ := metaRow(t, b.st, "k")
+	if ra.HLC != rb.HLC {
+		t.Fatalf("setup: want equal HLCs, got %+v and %+v", ra.HLC, rb.HLC)
+	}
+
+	engA := a.engine([]string{b.addr})
+	engC := c.engine([]string{a.addr})
+	if err := engC.RoundOnce(ctx, a.addr); err != nil {
+		t.Fatal(err)
+	}
+	if err := engA.RoundOnce(ctx, b.addr); err != nil {
+		t.Fatal(err)
+	}
+	if r, _ := metaRow(t, a.st, "k"); r.Owner != "api/b" {
+		t.Fatalf("setup: a should hold b's version, has %+v", r)
+	}
+	b.shutdown()
+
+	if err := engC.RoundOnce(ctx, a.addr); err != nil {
+		t.Fatal(err)
+	}
+	if r, _ := metaRow(t, c.st, "k"); r.Owner != "api/b" || string(r.Payload) != "from-b" {
+		t.Fatalf("c is stuck on %q (%s); a and c diverged", r.Owner, r.Payload)
+	}
+}
+
+// A node that every peer forgot (unreachable past the forget window) is told
+// to wipe on its next exchange, takes a new store id, and resyncs cleanly,
+// without bringing back a row that was deleted and collected meanwhile.
+func TestForgottenNodeWipesAndCannotResurrect(t *testing.T) {
+	ctx := context.Background()
+	a := newNode(t, "a", 1, nil)
+	b := newNode(t, "b", 2, nil)
+	engA := a.engine([]string{b.addr})
+	engB := b.engine([]string{a.addr})
+
+	putLabel(t, b.st, b.clock, "k", "api/b", "v1")
+	syncBoth(t, ctx, engA, engB, b.addr, a.addr, a.st, b.st)
+	if _, ok := metaRow(t, a.st, "k"); !ok {
+		t.Fatal("setup: a did not get k")
+	}
+
+	// a goes silent. b deletes k, forgets a, and collects the tombstone.
+	if _, err := b.st.PutLocal(store.KindMeta, "k", "api/b", b.clock, func(cur store.Row, _ bool) ([]byte, bool, error) {
+		return cur.Payload, true, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if n, _ := b.st.GCTombstones(time.Now().Add(time.Hour).UnixMilli()); n != 0 {
+		t.Fatal("tombstone collected while a, a known peer, had not pulled it")
+	}
+	if n, _ := b.st.ForgetPeers(time.Now().Add(time.Hour).UnixMilli()); n != 1 {
+		t.Fatal("b did not forget a")
+	}
+	if n, _ := b.st.GCTombstones(time.Now().Add(time.Hour).UnixMilli()); n != 1 {
+		t.Fatal("tombstone not collected after a was forgotten")
+	}
+	oldID, _ := a.st.StoreID()
+
+	// a comes back and pulls first: b tells it to wipe.
+	if err := engA.RoundOnce(ctx, b.addr); err != nil {
+		t.Fatal(err)
+	}
+	if id, _ := a.st.StoreID(); id == oldID {
+		t.Fatal("a did not wipe after b reported it forgotten")
+	}
+	if _, ok := metaRow(t, a.st, "k"); ok {
+		t.Fatal("a still holds the row b deleted")
+	}
+
+	syncBoth(t, ctx, engA, engB, b.addr, a.addr, a.st, b.st)
+	for _, n := range []*node{a, b} {
+		if r, ok := metaRow(t, n.st, "k"); ok && !r.Tombstone {
+			t.Fatalf("%s: deleted row came back: %+v", n.id, r)
+		}
+	}
+}
+
+// Same, but b pulls first: b tells a (as a server) it was forgotten, a wipes
+// before serving, and b never receives the deleted row.
+func TestForgottenServerWipesBeforeServing(t *testing.T) {
+	ctx := context.Background()
+	a := newNode(t, "a", 1, nil)
+	b := newNode(t, "b", 2, nil)
+	engA := a.engine([]string{b.addr})
+	engB := b.engine([]string{a.addr})
+
+	putLabel(t, b.st, b.clock, "k", "api/b", "v1")
+	syncBoth(t, ctx, engA, engB, b.addr, a.addr, a.st, b.st)
+
+	if _, err := b.st.PutLocal(store.KindMeta, "k", "api/b", b.clock, func(cur store.Row, _ bool) ([]byte, bool, error) {
+		return cur.Payload, true, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	_, _ = b.st.ForgetPeers(time.Now().Add(time.Hour).UnixMilli())
+	_, _ = b.st.GCTombstones(time.Now().Add(time.Hour).UnixMilli())
+
+	if err := engB.RoundOnce(ctx, a.addr); err != nil {
+		t.Fatal(err)
+	}
+	if r, ok := metaRow(t, b.st, "k"); ok && !r.Tombstone {
+		t.Fatalf("b took the deleted row back from forgotten a: %+v", r)
+	}
+	if _, ok := metaRow(t, a.st, "k"); ok {
+		t.Fatal("a did not wipe before serving b")
+	}
+}
+
+func TestEngineDoesNotForgetPeersRightAfterItsOwnRestart(t *testing.T) {
+	a := newNode(t, "a", 1, nil)
+	eng := a.engine(nil)
+	eng.SetRetention(time.Hour, 24*time.Hour)
+	// A peer last seen two days ago, e.g. because this node itself was down.
+	if _, err := a.st.Serve(store.ServeRequest{StoreID: "peer", NowMs: time.Now().Add(-48 * time.Hour).UnixMilli()}); err != nil {
+		t.Fatal(err)
+	}
+	if err := eng.GC(); err != nil {
+		t.Fatal(err)
+	}
+	if p, _, _ := a.st.Peer("peer"); p.Forgotten {
+		t.Fatal("peer forgotten although this node has only just started")
+	}
+	eng.started = time.Now().Add(-25 * time.Hour)
+	if err := eng.GC(); err != nil {
+		t.Fatal(err)
+	}
+	if p, _, _ := a.st.Peer("peer"); !p.Forgotten {
+		t.Fatal("peer silent for the whole window while this node was up was not forgotten")
+	}
 }

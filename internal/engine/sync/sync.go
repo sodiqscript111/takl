@@ -3,6 +3,7 @@ package sync
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"time"
 
@@ -10,6 +11,16 @@ import (
 	"takl/internal/metrics"
 	"takl/internal/model"
 	"takl/internal/transport"
+	"takl/internal/transport/pb"
+)
+
+const (
+	// DefaultTombstoneGrace is the minimum age of a tombstone before it can be
+	// dropped. It is also only dropped once every known peer has pulled it.
+	DefaultTombstoneGrace = time.Hour
+	// DefaultForgetAfter is how long a peer can be unreachable before it stops
+	// blocking tombstone GC. A forgotten peer must wipe before it syncs again.
+	DefaultForgetAfter = 24 * time.Hour
 )
 
 type Engine struct {
@@ -19,13 +30,28 @@ type Engine struct {
 	client       *transport.Client
 	peerProvider func() []string
 	interval     time.Duration
+
+	grace       time.Duration
+	forgetAfter time.Duration
+	started     time.Time
+	now         func() time.Time
 }
 
 func New(nodeID string, st *store.Store, clock *model.Clock, client *transport.Client, peerProvider func() []string, interval time.Duration) *Engine {
 	if interval <= 0 {
 		interval = 2 * time.Second
 	}
-	return &Engine{nodeID: nodeID, st: st, clock: clock, client: client, peerProvider: peerProvider, interval: interval}
+	return &Engine{
+		nodeID: nodeID, st: st, clock: clock, client: client, peerProvider: peerProvider, interval: interval,
+		grace: DefaultTombstoneGrace, forgetAfter: DefaultForgetAfter,
+		started: time.Now(), now: time.Now,
+	}
+}
+
+// SetRetention overrides the tombstone grace period and the forget window.
+func (e *Engine) SetRetention(grace, forgetAfter time.Duration) {
+	e.grace = grace
+	e.forgetAfter = forgetAfter
 }
 
 func (e *Engine) Run(ctx context.Context) error {
@@ -42,21 +68,36 @@ func (e *Engine) Run(ctx context.Context) error {
 			if err := e.roundAll(ctx); err != nil {
 				slog.Warn("sync round", "err", err)
 			}
-			e.gcTombstones()
+			if err := e.GC(); err != nil {
+				slog.Warn("tombstone gc", "err", err)
+			}
 		}
 	}
 }
 
-func (e *Engine) gcTombstones() {
-	grace := int64(1 * 60 * 60 * 1000)
-	nowTS := e.clock.Tick().TS
-
-	var minTS int64
-	if nowTS > grace {
-		minTS = nowTS - grace
+// GC forgets peers that have been silent for the forget window, then drops
+// tombstones that are past the grace period and that every remaining peer has
+// pulled. Peers are only forgotten once this node has itself been running for
+// the whole window, so a node coming back from its own downtime never forgets
+// healthy peers (and never makes them wipe).
+func (e *Engine) GC() error {
+	now := e.now()
+	if now.Sub(e.started) >= e.forgetAfter {
+		n, err := e.st.ForgetPeers(now.Add(-e.forgetAfter).UnixMilli())
+		if err != nil {
+			return err
+		}
+		if n > 0 {
+			metrics.SyncPeersForgotten.Add(uint64(n))
+			slog.Warn("forgot unreachable peers; they must wipe before syncing again", "count", n, "after", e.forgetAfter)
+		}
 	}
-
-	_, _ = e.st.GCTombstones(model.HLC{TS: minTS, Seq: 0})
+	n, err := e.st.GCTombstones(now.Add(-e.grace).UnixMilli())
+	if err != nil {
+		return err
+	}
+	metrics.SyncTombstonesCollected.Add(uint64(n))
+	return nil
 }
 
 func (e *Engine) roundAll(ctx context.Context) error {
@@ -97,92 +138,83 @@ func (e *Engine) roundAll(ctx context.Context) error {
 	return firstErr
 }
 
-func (e *Engine) RoundOnce(ctx context.Context, peer string) error {
-	watermarks := make(map[string]model.HLC, len(store.Kinds))
-	checksums := make(map[string]uint64, len(store.Kinds))
-
-	for _, kind := range store.Kinds {
-		wm, err := e.st.Watermark(peer, kind)
-		if err != nil {
-			return err
-		}
-		watermarks[string(kind)] = wm
-
-		chk, err := e.st.Checksum(kind)
-		if err != nil {
-			return err
-		}
-		checksums[string(kind)] = chk
-	}
-
-	evWm, err := e.st.Watermark(peer, store.KindEvent)
+// RoundOnce pulls every change the peer at addr has made since our watermark
+// for its store, and applies it.
+func (e *Engine) RoundOnce(ctx context.Context, addr string) error {
+	self, err := e.st.StoreID()
 	if err != nil {
 		return err
 	}
-	evChk, err := e.st.ChecksumEvents()
+	peer, err := e.st.PeerByAddr(addr)
 	if err != nil {
 		return err
 	}
-
-	resp, err := e.client.Pull(ctx, peer, watermarks, checksums, evWm, evChk)
+	resp, err := e.client.Pull(ctx, addr, &pb.PullRequest{
+		NodeId:       e.nodeID,
+		StoreId:      self,
+		PeerStoreId:  peer.StoreID,
+		SinceVersion: peer.Watermark,
+		Forgotten:    peer.Forgotten,
+	})
 	if err != nil {
 		return err
 	}
-	if len(resp.Rows) > 0 {
-		rows := make([]store.Row, 0, len(resp.Rows))
-		var maxHLC model.HLC
-		for _, r := range resp.Rows {
-			row := store.Row{
-				Kind:      store.Kind(r.Kind),
-				Key:       r.Key,
-				Owner:     r.Owner,
-				HLC:       model.HLC{TS: r.Hlc.GetTs(), Seq: r.Hlc.GetSeq()},
-				Tombstone: r.Tombstone,
-				Payload:   r.Payload,
-			}
-			rows = append(rows, row)
-			if row.HLC.After(maxHLC) {
-				maxHLC = row.HLC
-			}
-		}
-		if err := e.st.ApplyRemote(peer, rows); err != nil {
-			return err
-		}
-		metrics.SyncRowsApplied.Add(uint64(len(rows)))
-		e.clock.Update(maxHLC)
+	if resp.Forgotten {
+		return transport.Wipe(e.st, "peer "+resp.NodeId+" has forgotten this store")
 	}
 
-	if len(resp.Events) > 0 {
-		var incoming []model.Event
-		var maxEvHLC model.HLC
-		for _, ev := range resp.Events {
-			var pl map[string]any
-			if ev.Payload != "" {
-				_ = json.Unmarshal([]byte(ev.Payload), &pl)
-			}
-			h := model.HLC{TS: ev.Hlc.Ts, Seq: ev.Hlc.Seq}
-			incoming = append(incoming, model.Event{
-				RunnerID: ev.RunnerId,
-				Seq:      ev.Seq,
-				Type:     model.EventType(ev.Type),
-				Payload:  pl,
-				HLC:      h,
-			})
-			if h.After(evWm) {
-				evWm = h
-			}
-			if h.After(maxEvHLC) {
-				maxEvHLC = h
-			}
-		}
-		if err := e.st.ApplyEvents(incoming); err != nil {
-			return err
-		}
-		metrics.SyncEventsApplied.Add(uint64(len(incoming)))
-		if err := e.st.SetWatermark(peer, store.KindEvent, evWm); err != nil {
-			return err
-		}
-		e.clock.Update(maxEvHLC)
+	remote := store.Remote{
+		RequestedAs: self,
+		Addr:        addr,
+		StoreID:     resp.StoreId,
+		NodeID:      resp.NodeId,
+		Version:     resp.Version,
+		NowMs:       e.now().UnixMilli(),
 	}
+	var maxHLC model.HLC
+	for _, r := range resp.Rows {
+		h := model.HLC{TS: r.Hlc.GetTs(), Seq: r.Hlc.GetSeq()}
+		remote.Rows = append(remote.Rows, store.Row{
+			Kind:      store.Kind(r.Kind),
+			Key:       r.Key,
+			Owner:     r.Owner,
+			HLC:       h,
+			Tombstone: r.Tombstone,
+			Payload:   r.Payload,
+		})
+		if h.After(maxHLC) {
+			maxHLC = h
+		}
+	}
+	for _, ev := range resp.Events {
+		var pl map[string]any
+		if ev.Payload != "" {
+			_ = json.Unmarshal([]byte(ev.Payload), &pl)
+		}
+		h := model.HLC{TS: ev.Hlc.GetTs(), Seq: ev.Hlc.GetSeq()}
+		remote.Events = append(remote.Events, model.Event{
+			RunnerID: ev.RunnerId,
+			Seq:      ev.Seq,
+			Type:     model.EventType(ev.Type),
+			Payload:  pl,
+			HLC:      h,
+			Origin:   ev.Origin,
+		})
+		if h.After(maxHLC) {
+			maxHLC = h
+		}
+	}
+
+	_, err = e.st.ApplyRemote(remote)
+	if errors.Is(err, store.ErrPeerForgotten) {
+		slog.Warn("peer we forgot is still serving its old store; skipping it", "peer", addr, "node", resp.NodeId)
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	metrics.SyncRowsApplied.Add(uint64(len(remote.Rows)))
+	metrics.SyncEventsApplied.Add(uint64(len(remote.Events)))
+	e.clock.Update(maxHLC)
 	return nil
 }

@@ -14,7 +14,7 @@ func TestPutLocalSupersedesRowAppliedBeforeClockUpdate(t *testing.T) {
 	clock := model.NewClock(func() int64 { return 100 })
 
 	remote := model.HLC{TS: 100, Seq: 5}
-	if err := st.ApplyRemote("peer", []Row{{Kind: KindMeta, Key: "r1", Owner: "api/peer", HLC: remote, Payload: []byte(`{"a":"1"}`)}}); err != nil {
+	if _, err := st.ApplyRemote(Remote{StoreID: "peer", Rows: []Row{{Kind: KindMeta, Key: "r1", Owner: "api/peer", HLC: remote, Payload: []byte(`{"a":"1"}`)}}}); err != nil {
 		t.Fatal(err)
 	}
 	// No clock.Update(remote) here: that is the race.
@@ -70,10 +70,10 @@ func TestDeleteByNodeSupersedesNewerRows(t *testing.T) {
 	clock := model.NewClock(func() int64 { return 100 })
 
 	remote := model.HLC{TS: 100, Seq: 7}
-	if err := st.ApplyRemote("peer", []Row{
+	if _, err := st.ApplyRemote(Remote{StoreID: "peer", Rows: []Row{
 		{Kind: KindRunner, Key: "dead", Owner: "dead/epoch1", HLC: remote, Payload: []byte("x")},
 		{Kind: KindRunner, Key: "alive", Owner: "alive/epoch1", HLC: remote, Payload: []byte("y")},
-	}); err != nil {
+	}}); err != nil {
 		t.Fatal(err)
 	}
 

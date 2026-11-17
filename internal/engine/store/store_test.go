@@ -129,38 +129,30 @@ func TestListExcludesTombstones(t *testing.T) {
 	}
 }
 
-func TestChangesSince(t *testing.T) {
+func TestChangesSinceUsesLocalVersions(t *testing.T) {
 	st := openTest(t)
-	put := func(key string, ts, seq int64) {
+	put := func(key string, ts int64) {
 		t.Helper()
-		if err := st.Put(Row{Kind: KindRunner, Key: key, Owner: "n", HLC: model.HLC{TS: ts, Seq: seq}, Payload: []byte(key)}); err != nil {
+		if err := st.Put(Row{Kind: KindRunner, Key: key, Owner: "n", HLC: model.HLC{TS: ts}, Payload: []byte(key)}); err != nil {
 			t.Fatal(err)
 		}
 	}
-	put("r1", 1, 0)
-	put("r2", 3, 0)
-	put("r3", 3, 2)
-	put("r4", 5, 0)
-	rows, err := st.ChangesSince(KindRunner, model.HLC{TS: 3, Seq: 1})
+	put("r1", 10)
+	put("r2", 30)
+	since, _ := st.Version()
+	put("r3", 5) // older HLC, newer change
+	if err := st.Delete(KindRunner, "r1", "n", model.HLC{TS: 40}); err != nil {
+		t.Fatal(err)
+	}
+	rows, err := st.ChangesSince(KindRunner, since)
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := map[string]bool{}
-	for _, r := range rows {
-		got[r.Key] = true
+	if len(rows) != 2 || rows[0].Key != "r3" || rows[1].Key != "r1" || !rows[1].Tombstone {
+		t.Fatalf("want r3 then the r1 tombstone, in change order: %+v", rows)
 	}
-	if len(rows) != 2 || !got["r3"] || !got["r4"] {
-		t.Fatalf("ChangesSince wrong: %v", got)
-	}
-	if err := st.Delete(KindRunner, "r2", "n", model.HLC{TS: 4, Seq: 0}); err != nil {
-		t.Fatal(err)
-	}
-	rows, err = st.ChangesSince(KindRunner, model.HLC{TS: 3, Seq: 2})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(rows) != 2 {
-		t.Fatalf("tombstones must be included in ChangesSince: %d", len(rows))
+	if all, _ := st.ChangesSince(KindRunner, 0); len(all) != 3 {
+		t.Fatalf("since 0 should return every row, got %d", len(all))
 	}
 }
 
@@ -197,38 +189,5 @@ func TestEvents(t *testing.T) {
 	}
 	if len(evs) != 2 || evs[0].Seq != 2 {
 		t.Fatalf("limit broken: %+v", evs)
-	}
-}
-
-func TestWatermarkMonotonic(t *testing.T) {
-	st := openTest(t)
-	if wm, err := st.Watermark("peer1", KindRunner); err != nil || (wm != model.HLC{}) {
-		t.Fatalf("expected zero watermark, got %+v err=%v", wm, err)
-	}
-	if err := st.SetWatermark("peer1", KindRunner, model.HLC{TS: 5, Seq: 2}); err != nil {
-		t.Fatal(err)
-	}
-	if err := st.SetWatermark("peer1", KindRunner, model.HLC{TS: 3, Seq: 9}); err != nil {
-		t.Fatal(err)
-	}
-	wm, err := st.Watermark("peer1", KindRunner)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if wm.TS != 5 || wm.Seq != 2 {
-		t.Fatalf("watermark went backwards: %+v", wm)
-	}
-	if err := st.SetWatermark("peer1", KindRunner, model.HLC{TS: 5, Seq: 5}); err != nil {
-		t.Fatal(err)
-	}
-	wm, _ = st.Watermark("peer1", KindRunner)
-	if wm.Seq != 5 {
-		t.Fatalf("watermark did not advance: %+v", wm)
-	}
-	if err := st.SetWatermark("peer2", KindMeta, model.HLC{TS: 1}); err != nil {
-		t.Fatal(err)
-	}
-	if wm, _ := st.Watermark("peer1", KindMeta); wm != (model.HLC{}) {
-		t.Fatalf("watermark not scoped by kind: %+v", wm)
 	}
 }

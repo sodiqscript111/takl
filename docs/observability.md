@@ -6,7 +6,7 @@ Takl exposes Prometheus metrics at:
 GET /metrics
 ```
 
-The endpoint includes HTTP status counts, placement request count, placement error count, placement latency, sync round count, sync round errors, sync rows/events applied, checksum reconciliation count, active runners, worker capacity, and available workers.
+The endpoint includes HTTP status counts, placement request count, placement error count, placement latency, sync round count, sync round errors, sync rows/events applied, store wipes, peers forgotten, tombstones collected, active runners, worker capacity, and available workers.
 
 Runtime profiling is opt-in and requires an admin token:
 
